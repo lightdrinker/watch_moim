@@ -7,30 +7,24 @@ export default async function handler(req, res) {
 
   const { action, query, photo_references, maxwidth = 600 } = req.query;
 
-  // Gemini API 프록시
+  // Gemini API 프록시 — req.body로 바로 접근 (Vercel이 자동 파싱)
   if (action === 'gemini') {
     const GEMINI_KEY = process.env.GEMINI_API_KEY;
     if (!GEMINI_KEY) return res.status(500).json({ error: 'Gemini API key not configured' });
     try {
-      const body = await new Promise((resolve, reject) => {
-        let data = '';
-        req.on('data', chunk => data += chunk);
-        req.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
-        req.on('error', reject);
-      });
+      const prompt = req.body?.prompt || '';
+      if (!prompt) return res.status(400).json({ error: 'No prompt provided' });
 
-      const { prompt } = body;
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`;
       const r = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.7, maxOutputTokens: 1200 }
+          generationConfig: { temperature: 0.7, maxOutputTokens: 1500 }
         })
       });
       const data = await r.json();
-      // Gemini 응답에서 텍스트 추출해서 일관된 형태로 반환
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
       return res.status(200).json({ text });
     } catch(e) {
@@ -39,9 +33,10 @@ export default async function handler(req, res) {
   }
 
   const API_KEY = process.env.GOOGLE_PLACES_API_KEY;
-  if (!API_KEY) return res.status(500).json({ error: 'API key not configured' });
+  if (!API_KEY) return res.status(500).json({ error: 'Google API key not configured' });
 
   try {
+    // 식당 검색 + 상세정보 병렬 조회
     if (action === 'search') {
       const searchUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&language=ko&region=kr&key=${API_KEY}`;
       const searchRes = await fetch(searchUrl);
@@ -61,6 +56,38 @@ export default async function handler(req, res) {
       return res.status(200).json({ results: details });
     }
 
+    // Geocoding — 텍스트 주소를 좌표로 변환
+    if (action === 'geocode') {
+      const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&language=ko&region=kr&key=${API_KEY}`;
+      const geocodeRes = await fetch(geocodeUrl);
+      const geocodeData = await geocodeRes.json();
+      if (!geocodeData.results || geocodeData.results.length === 0) return res.status(200).json({ lat: null, lng: null });
+      const loc = geocodeData.results[0].geometry.location;
+      return res.status(200).json({ lat: loc.lat, lng: loc.lng });
+    }
+
+    // 좌표 기반 주변 식당 검색
+    if (action === 'nearby') {
+      const { lat, lng, keyword } = req.query;
+      const nearbyUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(keyword)}&location=${lat},${lng}&radius=1500&language=ko&region=kr&key=${API_KEY}`;
+      const nearbyRes = await fetch(nearbyUrl);
+      const nearbyData = await nearbyRes.json();
+      if (!nearbyData.results || nearbyData.results.length === 0) return res.status(200).json({ results: [] });
+
+      const top = nearbyData.results.slice(0, 10);
+      const fields = 'name,rating,user_ratings_total,formatted_address,photos,price_level,opening_hours,place_id,types';
+      const details = await Promise.all(top.map(async (place) => {
+        try {
+          const detailUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.place_id}&fields=${fields}&language=ko&key=${API_KEY}`;
+          const detailRes = await fetch(detailUrl);
+          const detailData = await detailRes.json();
+          return detailData.result || place;
+        } catch { return place; }
+      }));
+      return res.status(200).json({ results: details });
+    }
+
+    // 사진 2장 URL 반환
     if (action === 'photo') {
       const refs = (photo_references || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 2);
       const urls = await Promise.all(refs.map(async (ref) => {
