@@ -81,8 +81,11 @@ input:focus,select:focus{outline:none;border-color:#1D9E75}
 .rest-card.ranked-1{border:1.5px solid #1D9E75}
 .rest-card.ranked-2{border:1.5px solid #5DCAA5}
 .rest-card.ranked-3{border:1.5px solid #9FE1CB}
-.rest-photo{width:100%;height:160px;object-fit:cover;display:block;background:#f0f0f0}
+.rest-photos{display:flex;flex-direction:column}
+.rest-photo{width:100%;height:140px;object-fit:cover;display:block;background:#f0f0f0}
 .rest-photo-placeholder{width:100%;height:100px;background:linear-gradient(135deg,#e8f5e9,#f1f8e9);display:flex;align-items:center;justify-content:center;font-size:32px}
+.menu-badge{font-size:12px;color:#0F6E56;background:#E1F5EE;padding:6px 10px;border-radius:6px;margin-bottom:8px}
+.filter-match-line{font-size:12px;color:#1D9E75;margin-top:6px;margin-bottom:4px;font-weight:500}
 .rest-body{padding:14px}
 .rank-badge{position:absolute;top:10px;right:10px;min-width:36px;height:28px;padding:0 10px;border-radius:20px;background:rgba(255,255,255,0.92);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;color:#888;border:.5px solid #e0e0e0;backdrop-filter:blur(4px)}
 .rank-badge.r1{background:#1D9E75;color:#fff;border-color:#1D9E75}
@@ -686,15 +689,17 @@ JSON만 반환:
     placesResults=searchData.results||[];
   }catch(e){}
 
-  // STEP 3: Claude가 검색 결과 중 조건에 맞는 3개 선별 + 설명 + 대표 메뉴 추가
+  // STEP 3: Claude가 실제 정보 기반으로 선별 + 실제 코멘트 + 특징 태그 생성
   advanceStep(3);
-  const placesList=placesResults.slice(0,10).map((p,i)=>
-    `${i+1}. 이름: ${p.name}, 평점: ${p.rating||'없음'}, 주소: ${p.formatted_address||p.vicinity||''}, 영업여부: ${p.opening_hours?.open_now!=null?(p.opening_hours.open_now?'영업중':'영업종료'):'알수없음'}`
-  ).join('\n');
+  const placesList=placesResults.slice(0,10).map((p,i)=>{
+    const hours=p.opening_hours?.open_now!=null?(p.opening_hours.open_now?'영업중':'영업종료'):'영업시간 미확인';
+    const ratings_count=p.user_ratings_total?`(리뷰 ${p.user_ratings_total}개)`:'';
+    return `${i+1}. 상호명: ${p.name} | 평점: ${p.rating||'없음'} ${ratings_count} | 주소: ${p.formatted_address||p.vicinity||''} | 현재: ${hours}`;
+  }).join('\n');
 
   let selected=[];
   try{
-    const selectPrompt=`아래는 Google Places에서 실제로 검색된 ${area} 근처 식당 목록이에요.
+    const selectPrompt=`아래는 Google Places에서 실제 검색된 ${area} 식당/술집 목록입니다.
 
 ${placesList}
 
@@ -703,45 +708,50 @@ ${placesList}
 - 세부 조건: ${fbSum}
 - 인원: ${S.totalCount}명
 
-위 실제 식당 목록 중에서 조건에 가장 잘 맞는 3개를 골라주세요.
-각 식당에 대해 추천 이유, 이 식당에서 꼭 먹어봐야 할 대표 메뉴 2~3개, 조건 충족 요약을 작성해주세요.
+위 목록에서 조건에 가장 잘 맞는 3곳을 골라 아래 형식으로 작성해주세요.
+
+주의사항:
+- description: 이 식당만의 분위기, 특징, 왜 이 모임에 어울리는지를 생생하게 2문장으로. "조건에 맞는 식당"같은 뻔한 말 금지.
+- menu: 이 식당의 대표 메뉴 2~3개 (실제 메뉴명으로)
+- tags: 실제 특징 기반 태그 3~5개. 예: "루프탑", "새벽2시까지", "단체석 가능", "웨이팅 있음", "혼자와도 OK", "주차 가능", "조용한 분위기", "포장마차 감성" 등 구체적으로
+- filter_match: 이 모임 조건(${S.filterA}, ${fbSum})을 어떻게 충족하는지 짧게
 
 JSON만 반환:
 [
   {
-    "index": 목록에서의 번호(1부터),
-    "description": "추천 이유 1~2문장",
-    "menu": "대표 메뉴: 메뉴명1, 메뉴명2",
-    "filter_match": "조건 충족 요약",
-    "tags": ["태그1","태그2","태그3"]
+    "index": 목록번호(1부터),
+    "description": "생생한 코멘트 2문장",
+    "menu": "대표메뉴1, 대표메뉴2, 대표메뉴3",
+    "tags": ["특징태그1","특징태그2","특징태그3"],
+    "filter_match": "조건 충족 요약"
   }
 ]`;
 
     const selectRes=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:800,messages:[{role:'user',content:selectPrompt}]})
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:selectPrompt}]})
     });
     const selectData=await selectRes.json();
     const selectText=selectData.content.map(c=>c.text||'').join('');
     selected=JSON.parse(selectText.replace(/```json|```/g,'').trim());
   }catch(e){
-    // 선별 실패시 상위 3개 그냥 사용
     selected=placesResults.slice(0,3).map((_,i)=>({
-      index:i+1,description:'조건에 맞는 식당이에요.',menu:'',filter_match:S.filterA,tags:[]
+      index:i+1,description:'분위기 좋은 곳이에요.',menu:'',filter_match:S.filterA,tags:[]
     }));
   }
 
-  // STEP 4: 사진 가져오기
+  // STEP 4: 사진 2장씩 가져오기 (1번째: 외관/분위기, 2번째: 음식)
   advanceStep(4);
   const enriched=await Promise.all(selected.map(async(sel)=>{
     const place=placesResults[sel.index-1];
     if(!place)return null;
-    let photo_url=null;
+    let photo_urls=[];
     if(place.photos&&place.photos.length>0){
       try{
-        const pr=await fetch(`/api/places?action=photo&photo_reference=${encodeURIComponent(place.photos[0].photo_reference)}&maxwidth=600`);
+        const refs=place.photos.slice(0,2).map(p=>p.photo_reference).join(',');
+        const pr=await fetch(`/api/places?action=photo&photo_references=${encodeURIComponent(refs)}&maxwidth=600`);
         const pd=await pr.json();
-        photo_url=pd.photo_url||null;
+        photo_urls=pd.photo_urls||[];
       }catch(e){}
     }
     return{
@@ -751,41 +761,29 @@ JSON만 반환:
       filter_match:sel.filter_match,
       tags:sel.tags||[],
       rating:place.rating||null,
+      user_ratings_total:place.user_ratings_total||null,
       price_level:place.price_level||null,
       address:place.formatted_address||place.vicinity||'',
-      photo_url,
+      photo_urls,
       naver_url:`https://map.naver.com/v5/search/${encodeURIComponent(place.name+' '+area)}`
     };
   }));
 
   const validRestaurants=enriched.filter(Boolean);
-
-  // Places 검색 결과가 없으면 fallback
   if(validRestaurants.length===0){
-    S.rec={
-      area,areaReason,
-      restaurants:[
-        {display_name:'검색 결과 없음',description:'Google Places 검색 결과가 없어요. 직접 네이버맵에서 검색해보세요.',menu:'',filter_match:'',tags:[],rating:null,price_level:null,photo_url:null,naver_url:`https://map.naver.com/v5/search/${encodeURIComponent(area+' '+S.filterA)}`}
-      ]
-    };
+    S.rec={area,area_reason:areaReason,restaurants:[
+      {display_name:'검색 결과 없음',description:'직접 네이버맵에서 검색해보세요.',menu:'',filter_match:'',tags:[],rating:null,photo_urls:[],naver_url:`https://map.naver.com/v5/search/${encodeURIComponent(area+' '+S.filterA)}`}
+    ]};
   }else{
     S.rec={area,area_reason:areaReason,restaurants:validRestaurants};
   }
-
   setupVote();
   go('s-vote');
 }
 
 function buildSearchKeyword(area){
-  const keywordMap={
-    '술자리':'서울 '+area+' 이자카야 포차',
-    '청첩모임':'서울 '+area+' 한정식 레스토랑',
-    '단체회식':'서울 '+area+' 단체 식당',
-    '가족모임':'서울 '+area+' 가족 식당',
-    '가볍게식사':'서울 '+area+' 맛집',
-    '카페디저트':'서울 '+area+' 카페'
-  };
-  return keywordMap[S.filterA]||'서울 '+area+' 맛집';
+  const map={'술자리':'서울 '+area+' 이자카야 포차 술집','청첩모임':'서울 '+area+' 한정식 레스토랑','단체회식':'서울 '+area+' 단체 회식 식당','가족모임':'서울 '+area+' 가족 식당','가볍게식사':'서울 '+area+' 맛집 식당','카페디저트':'서울 '+area+' 카페'};
+  return map[S.filterA]||'서울 '+area+' 맛집';
 }
 
 function priceLevel(n){
@@ -806,24 +804,35 @@ function setupVote(){
   S.rec.restaurants.forEach((r,i)=>{
     const card=document.createElement('div');
     card.className='rest-card';card.id='vc-'+i;card.onclick=()=>castVote(i);
-    const photoHtml=r.photo_url
-      ?`<img src="${r.photo_url}" class="rest-photo" alt="식당 사진" onerror="this.style.display='none'">`
-      :`<div class="rest-photo-placeholder">🍽️</div>`;
-    const ratingHtml=r.rating?`<span class="rest-rating">★ ${r.rating}</span>`:'';
+
+    // 사진 2장 위아래 배치
+    const photo1=r.photo_urls&&r.photo_urls[0];
+    const photo2=r.photo_urls&&r.photo_urls[1];
+    const photoBlock=`
+      <div class="rest-photos">
+        ${photo1?`<img src="${photo1}" class="rest-photo" alt="외관" onerror="this.parentElement.querySelector('.rest-photo-ph').style.display='flex';this.style.display='none'">`:''}
+        ${!photo1?`<div class="rest-photo-ph rest-photo">🏠</div>`:''}
+        <div class="rest-photo-ph" style="display:none;align-items:center;justify-content:center;font-size:28px;background:#f0f0f0;height:140px">🏠</div>
+        ${photo2?`<img src="${photo2}" class="rest-photo" alt="음식" onerror="this.parentElement.querySelector('.rest-photo-ph2').style.display='flex';this.style.display='none'">`
+          :`<div class="rest-photo-ph2 rest-photo" style="display:flex;align-items:center;justify-content:center;font-size:28px;background:#f5f0e8">🍽️</div>`}
+      </div>`;
+
+    const ratingHtml=r.rating?`<span class="rest-rating">★ ${r.rating}</span>${r.user_ratings_total?`<span style="font-size:11px;color:#bbb"> (${r.user_ratings_total.toLocaleString()})</span>`:''}`:'';
     const priceHtml=r.price_level?`<span class="rest-price">${priceLevel(r.price_level)}</span>`:'';
+
     card.innerHTML=`
-      ${photoHtml}
+      ${photoBlock}
       <div class="rest-body">
         <div class="rank-badge" id="rb-${i}">?</div>
         <p class="rest-location">${S.rec.area}</p>
         <p class="rest-name">${r.display_name}</p>
         ${ratingHtml||priceHtml?`<div class="rest-meta">${ratingHtml}${priceHtml}</div>`:''}
         <p class="rest-desc">${r.description}</p>
-        ${r.menu?`<p style="font-size:12px;color:#0F6E56;margin-bottom:8px;background:#E1F5EE;padding:6px 10px;border-radius:6px">🍴 ${r.menu}</p>`:''}
+        ${r.menu?`<p class="menu-badge">🍴 ${r.menu}</p>`:''}
         <div class="rest-tags">
           ${(r.tags||[]).map(t=>`<span class="rest-tag">${t}</span>`).join('')}
-          <span class="filter-badge">✓ ${r.filter_match}</span>
         </div>
+        <p class="filter-match-line">✓ ${r.filter_match}</p>
         <div class="rest-actions" style="margin-top:10px">
           <a href="${r.naver_url}" target="_blank" class="btn-naver" onclick="event.stopPropagation()">🗺 네이버맵</a>
         </div>
