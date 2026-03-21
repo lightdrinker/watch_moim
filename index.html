@@ -81,7 +81,7 @@ input:focus,select:focus{outline:none;border-color:#1D9E75}
 .rest-card.ranked-1{border:1.5px solid #1D9E75}
 .rest-card.ranked-2{border:1.5px solid #5DCAA5}
 .rest-card.ranked-3{border:1.5px solid #9FE1CB}
-.rest-photos{display:flex;flex-direction:column}
+.rest-photos{display:flex;flex-direction:column;gap:3px}
 .rest-photo{width:100%;height:140px;object-fit:cover;display:block;background:#f0f0f0}
 .rest-photo-placeholder{width:100%;height:100px;background:linear-gradient(135deg,#e8f5e9,#f1f8e9);display:flex;align-items:center;justify-content:center;font-size:32px}
 .menu-badge{font-size:12px;color:#0F6E56;background:#E1F5EE;padding:6px 10px;border-radius:6px;margin-bottom:8px}
@@ -628,19 +628,15 @@ function advanceStep(i){
   if(cur)cur.classList.add('active');
 }
 
-// Places API 호출 (Vercel 프록시 경유)
-async function placesSearch(query){
-  const r=await fetch(`/api/places?action=search&query=${encodeURIComponent(query)}`);
-  return r.json();
-}
-async function placesDetail(place_id){
-  const r=await fetch(`/api/places?action=detail&place_id=${encodeURIComponent(place_id)}`);
-  return r.json();
-}
-async function placesPhoto(photo_reference){
-  const r=await fetch(`/api/places?action=photo&photo_reference=${encodeURIComponent(photo_reference)}&maxwidth=600`);
+// Gemini API 호출 헬퍼 — Vercel 프록시 경유
+async function callGemini(prompt){
+  const r=await fetch('/api/places?action=gemini',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({prompt})
+  });
   const d=await r.json();
-  return d.photo_url||null;
+  return d.text||'';
 }
 
 async function getRecommend(){
@@ -668,12 +664,7 @@ Google Places 검색어로 쓸 것이므로 간결하게.
 JSON만 반환:
 {"area":"동네명","area_reason":"선정 이유 2문장"}`;
 
-    const areaRes=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:200,messages:[{role:'user',content:areaPrompt}]})
-    });
-    const areaData=await areaRes.json();
-    const areaText=areaData.content.map(c=>c.text||'').join('');
+    const areaText=await callGemini(areaPrompt);
     const areaParsed=JSON.parse(areaText.replace(/```json|```/g,'').trim());
     area=areaParsed.area;
     areaReason=areaParsed.area_reason;
@@ -727,12 +718,7 @@ JSON만 반환:
   }
 ]`;
 
-    const selectRes=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:selectPrompt}]})
-    });
-    const selectData=await selectRes.json();
-    const selectText=selectData.content.map(c=>c.text||'').join('');
+    const selectText=await callGemini(selectPrompt);
     selected=JSON.parse(selectText.replace(/```json|```/g,'').trim());
   }catch(e){
     selected=placesResults.slice(0,3).map((_,i)=>({
@@ -859,9 +845,13 @@ function castVote(idx){
 function submitVote(){
   const scores=S.rec.restaurants.map(()=>0);
   voteOrder.forEach((pi,ri)=>scores[pi]+=(3-ri));
-  [[1,0,2],[0,2,1],[2,1,0]].slice(0,S.participants.length-1).forEach(order=>{
+  // 나 제외 나머지 참여자 시뮬레이션 — 인원수 무관하게 동작
+  const otherCount=Math.max(0,S.participants.length-1);
+  const demoOrders=[[1,0,2],[0,2,1],[2,1,0],[0,1,2],[2,0,1],[1,2,0]];
+  for(let i=0;i<otherCount;i++){
+    const order=demoOrders[i%demoOrders.length];
     order.forEach((pi,ri)=>scores[pi]+=(3-ri));
-  });
+  }
   S.scores=scores;
   const wi=scores.indexOf(Math.max(...scores));
   const w=S.rec.restaurants[wi];
