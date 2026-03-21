@@ -562,7 +562,7 @@ function submitParticipate(){
   S.myLoc=loc;S.myFilterB=getFilterBValue();
   S.participants.push({name:S.myName,loc,filterB:S.myFilterB,isMe:true});
   document.getElementById('wait-code').textContent=S.roomCode;
-  demoAreas=getRandAreas(3);
+  demoAreas=getRandAreas(Math.max(S.totalCount,6));
   demoIdx=0;
   renderMembers();go('s-waiting');
 }
@@ -644,53 +644,64 @@ async function getRecommend(){
   for(let i=0;i<5;i++){const el=document.getElementById('lstep-'+i);if(el)el.classList.remove('done','active');}
   advanceStep(0);
 
-  const locs=S.participants.map(p=>p.loc).join(', ');
   const fbSum=buildFBSummary();
 
-  // STEP 1: Claude가 동네만 결정
+  // STEP 1: 참여자 위치 → 좌표 변환 (Geocoding)
   advanceStep(1);
-  let area='홍대', areaReason='참여자들의 중간 지점으로 다양한 모임 장소가 있어요.';
+  let coords=[];
   try{
-    const areaPrompt=`서울 모임 장소 전문가입니다.
-모임 성격: ${S.filterA}
-참여자 출발 위치: ${locs}
-세부 조건: ${fbSum}
-총 인원: ${S.totalCount}명
-
-위 출발지들의 지리적 중간 지점을 계산해서, 모임 성격에도 어울리는 서울 동네 1곳을 골라주세요.
-동네는 실제 서울 상권명으로 (예: 홍대, 신촌, 강남역, 이태원, 합정, 성수, 건대 등).
-Google Places 검색어로 쓸 것이므로 간결하게.
-
-JSON만 반환:
-{"area":"동네명","area_reason":"선정 이유 2문장"}`;
-
-    const areaText=await callGemini(areaPrompt);
-    const areaParsed=JSON.parse(areaText.replace(/```json|```/g,'').trim());
-    area=areaParsed.area;
-    areaReason=areaParsed.area_reason;
+    const geocodeResults=await Promise.all(S.participants.map(async p=>{
+      try{
+        const r=await fetch(`/api/places?action=geocode&query=${encodeURIComponent(p.loc+' 서울')}`);
+        const d=await r.json();
+        if(d.lat&&d.lng)return{lat:d.lat,lng:d.lng};
+        return null;
+      }catch{return null;}
+    }));
+    coords=geocodeResults.filter(Boolean);
   }catch(e){}
 
-  // STEP 2: Google Places로 해당 동네 실제 식당 검색
+  // STEP 2: 중간 좌표 계산 → 주변 식당 검색
   advanceStep(2);
-  const searchKeyword=buildSearchKeyword(area);
+  let area='홍대', areaReason='참여자들의 중간 지점이에요.';
   let placesResults=[];
   try{
-    const searchRes=await fetch(`/api/places?action=search&query=${encodeURIComponent(searchKeyword)}`);
-    const searchData=await searchRes.json();
-    placesResults=searchData.results||[];
+    let centerLat, centerLng;
+    if(coords.length>0){
+      centerLat=coords.reduce((s,c)=>s+c.lat,0)/coords.length;
+      centerLng=coords.reduce((s,c)=>s+c.lng,0)/coords.length;
+    } else {
+      // fallback: 서울 중심
+      centerLat=37.5665; centerLng=126.9780;
+    }
+
+    // 중간 좌표로 주변 식당 검색
+    const keyword=buildSearchKeyword('');
+    const r=await fetch(`/api/places?action=nearby&lat=${centerLat}&lng=${centerLng}&keyword=${encodeURIComponent(keyword)}`);
+    const d=await r.json();
+    placesResults=d.results||[];
+
+    // 첫 번째 결과 주소에서 동네명 추출
+    if(placesResults.length>0){
+      const addr=placesResults[0].formatted_address||'';
+      const match=addr.match(/서울[^\s]*\s([^\s]+동|[^\s]+가|[^\s]+로)/);
+      area=match?match[1]:(addr.split(' ')[2]||'중간지점');
+    }
+    areaReason=`참여자 ${coords.length}명의 출발지를 계산한 지리적 중간 지점이에요. 모임 성격(${S.filterA})에 맞는 식당들이 검색됐어요.`;
   }catch(e){}
 
-  // STEP 3: Claude가 실제 정보 기반으로 선별 + 실제 코멘트 + 특징 태그 생성
+  // STEP 3: Gemini가 실제 정보 기반 선별 + 생생한 코멘트 + 특징 태그
   advanceStep(3);
   const placesList=placesResults.slice(0,10).map((p,i)=>{
     const hours=p.opening_hours?.open_now!=null?(p.opening_hours.open_now?'영업중':'영업종료'):'영업시간 미확인';
-    const ratings_count=p.user_ratings_total?`(리뷰 ${p.user_ratings_total}개)`:'';
-    return `${i+1}. 상호명: ${p.name} | 평점: ${p.rating||'없음'} ${ratings_count} | 주소: ${p.formatted_address||p.vicinity||''} | 현재: ${hours}`;
+    const cnt=p.user_ratings_total?`(리뷰 ${p.user_ratings_total}개)`:'';
+    return `${i+1}. 상호명: ${p.name} | 평점: ${p.rating||'없음'} ${cnt} | 주소: ${p.formatted_address||''} | ${hours}`;
   }).join('\n');
 
   let selected=[];
-  try{
-    const selectPrompt=`아래는 Google Places에서 실제 검색된 ${area} 식당/술집 목록입니다.
+  if(placesList){
+    try{
+      const selectPrompt=`아래는 Google Places에서 실제 검색된 식당/술집 목록입니다.
 
 ${placesList}
 
@@ -699,34 +710,26 @@ ${placesList}
 - 세부 조건: ${fbSum}
 - 인원: ${S.totalCount}명
 
-위 목록에서 조건에 가장 잘 맞는 3곳을 골라 아래 형식으로 작성해주세요.
+위 목록에서 조건에 가장 잘 맞는 3곳을 골라주세요.
 
-주의사항:
-- description: 이 식당만의 분위기, 특징, 왜 이 모임에 어울리는지를 생생하게 2문장으로. "조건에 맞는 식당"같은 뻔한 말 금지.
-- menu: 이 식당의 대표 메뉴 2~3개 (실제 메뉴명으로)
-- tags: 실제 특징 기반 태그 3~5개. 예: "루프탑", "새벽2시까지", "단체석 가능", "웨이팅 있음", "혼자와도 OK", "주차 가능", "조용한 분위기", "포장마차 감성" 등 구체적으로
-- filter_match: 이 모임 조건(${S.filterA}, ${fbSum})을 어떻게 충족하는지 짧게
+규칙:
+- description: 이 식당만의 분위기와 특징, 왜 이 모임에 딱 맞는지 생생하게 2문장. "분위기 좋은 곳이에요" 같은 뻔한 말 절대 금지.
+- menu: 이 식당의 대표 메뉴 2~3개 (실제 있을 법한 메뉴명)
+- tags: 실제 특징 태그 3~5개. "루프탑", "새벽2시까지", "단체석 가능", "웨이팅 있음", "주차 가능", "조용한 분위기", "포장마차 감성", "혼술 가능" 등 구체적으로
+- filter_match: ${S.filterA} 모임에 이 식당이 어울리는 핵심 이유 한 줄
 
-JSON만 반환:
-[
-  {
-    "index": 목록번호(1부터),
-    "description": "생생한 코멘트 2문장",
-    "menu": "대표메뉴1, 대표메뉴2, 대표메뉴3",
-    "tags": ["특징태그1","특징태그2","특징태그3"],
-    "filter_match": "조건 충족 요약"
-  }
-]`;
+반드시 JSON 배열만 반환 (다른 텍스트 없이):
+[{"index":1,"description":"...","menu":"...","tags":["..."],"filter_match":"..."}]`;
 
-    const selectText=await callGemini(selectPrompt);
-    selected=JSON.parse(selectText.replace(/```json|```/g,'').trim());
-  }catch(e){
-    selected=placesResults.slice(0,3).map((_,i)=>({
-      index:i+1,description:'분위기 좋은 곳이에요.',menu:'',filter_match:S.filterA,tags:[]
-    }));
+      const selectText=await callGemini(selectPrompt);
+      const clean=selectText.replace(/\`\`\`json|\`\`\`/g,'').trim();
+      selected=JSON.parse(clean);
+    }catch(e){
+      selected=placesResults.slice(0,3).map((_,i)=>({index:i+1,description:'이 동네에서 인기 있는 곳이에요.',menu:'',filter_match:S.filterA,tags:[]}));
+    }
   }
 
-  // STEP 4: 사진 2장씩 가져오기 (1번째: 외관/분위기, 2번째: 음식)
+  // STEP 4: 사진 2장씩 가져오기
   advanceStep(4);
   const enriched=await Promise.all(selected.map(async(sel)=>{
     const place=placesResults[sel.index-1];
@@ -749,27 +752,27 @@ JSON만 반환:
       rating:place.rating||null,
       user_ratings_total:place.user_ratings_total||null,
       price_level:place.price_level||null,
-      address:place.formatted_address||place.vicinity||'',
+      address:place.formatted_address||'',
       photo_urls,
-      naver_url:`https://map.naver.com/v5/search/${encodeURIComponent(place.name+' '+area)}`
+      naver_url:`https://map.naver.com/v5/search/${encodeURIComponent(place.name)}`
     };
   }));
 
-  const validRestaurants=enriched.filter(Boolean);
-  if(validRestaurants.length===0){
-    S.rec={area,area_reason:areaReason,restaurants:[
-      {display_name:'검색 결과 없음',description:'직접 네이버맵에서 검색해보세요.',menu:'',filter_match:'',tags:[],rating:null,photo_urls:[],naver_url:`https://map.naver.com/v5/search/${encodeURIComponent(area+' '+S.filterA)}`}
-    ]};
-  }else{
-    S.rec={area,area_reason:areaReason,restaurants:validRestaurants};
-  }
+  const valid=enriched.filter(Boolean);
+  S.rec={
+    area,
+    area_reason:areaReason,
+    restaurants:valid.length>0?valid:[{display_name:'검색 결과 없음',description:'직접 네이버맵에서 검색해보세요.',menu:'',filter_match:'',tags:[],rating:null,photo_urls:[],naver_url:`https://map.naver.com/v5/search/${encodeURIComponent(S.filterA+' 서울')}`}]
+  };
   setupVote();
   go('s-vote');
 }
 
+
 function buildSearchKeyword(area){
-  const map={'술자리':'서울 '+area+' 이자카야 포차 술집','청첩모임':'서울 '+area+' 한정식 레스토랑','단체회식':'서울 '+area+' 단체 회식 식당','가족모임':'서울 '+area+' 가족 식당','가볍게식사':'서울 '+area+' 맛집 식당','카페디저트':'서울 '+area+' 카페'};
-  return map[S.filterA]||'서울 '+area+' 맛집';
+  const prefix=area?'서울 '+area+' ':'서울 ';
+  const map={'술자리':prefix+'이자카야 포차 술집','청첩모임':prefix+'한정식 레스토랑','단체회식':prefix+'단체 회식 식당','가족모임':prefix+'가족 식당','가볍게식사':prefix+'맛집 식당','카페디저트':prefix+'카페'};
+  return map[S.filterA]||prefix+'맛집';
 }
 
 function priceLevel(n){
