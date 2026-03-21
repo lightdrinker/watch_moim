@@ -15,37 +15,40 @@ export default async function handler(req, res) {
   const { action, query, place_id, lat, lng } = req.query;
 
   try {
-    // 1) 텍스트 검색으로 식당 찾기
+    // 1) 동네명으로 식당 목록 검색 (상세정보 포함) — 한번에 10개 가져옴
     if (action === 'search') {
-      const url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&language=ko&region=kr&type=restaurant&key=${API_KEY}`;
-      const r = await fetch(url);
-      const data = await r.json();
-      return res.status(200).json(data);
+      const searchUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&language=ko&region=kr&key=${API_KEY}`;
+      const searchRes = await fetch(searchUrl);
+      const searchData = await searchRes.json();
+
+      if (!searchData.results || searchData.results.length === 0) {
+        return res.status(200).json({ results: [] });
+      }
+
+      // 상위 10개만 상세정보 병렬 조회
+      const top = searchData.results.slice(0, 10);
+      const fields = 'name,rating,user_ratings_total,formatted_address,photos,price_level,opening_hours,place_id';
+      const details = await Promise.all(
+        top.map(async (place) => {
+          try {
+            const detailUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.place_id}&fields=${fields}&language=ko&key=${API_KEY}`;
+            const detailRes = await fetch(detailUrl);
+            const detailData = await detailRes.json();
+            return detailData.result || place;
+          } catch {
+            return place;
+          }
+        })
+      );
+
+      return res.status(200).json({ results: details });
     }
 
-    // 2) 주변 식당 찾기 (좌표 기반)
-    if (action === 'nearby') {
-      const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=1000&type=restaurant&language=ko&key=${API_KEY}`;
-      const r = await fetch(url);
-      const data = await r.json();
-      return res.status(200).json(data);
-    }
-
-    // 3) 장소 상세정보 (사진 포함)
-    if (action === 'detail') {
-      const fields = 'name,rating,formatted_address,photos,opening_hours,price_level,url,website,formatted_phone_number';
-      const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place_id}&fields=${fields}&language=ko&key=${API_KEY}`;
-      const r = await fetch(url);
-      const data = await r.json();
-      return res.status(200).json(data);
-    }
-
-    // 4) 사진 URL 반환
+    // 2) 사진 URL 반환 (리다이렉트 따라가서 실제 이미지 URL 반환)
     if (action === 'photo') {
-      const { photo_reference, maxwidth = 400 } = req.query;
+      const { photo_reference, maxwidth = 600 } = req.query;
       const url = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=${maxwidth}&photo_reference=${photo_reference}&key=${API_KEY}`;
-      const r = await fetch(url);
-      // 구글은 사진을 리다이렉트로 줌 → 최종 URL 반환
+      const r = await fetch(url, { redirect: 'follow' });
       return res.status(200).json({ photo_url: r.url });
     }
 
