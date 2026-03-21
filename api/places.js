@@ -12,10 +12,9 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'API key not configured' });
   }
 
-  const { action, query, place_id, lat, lng } = req.query;
+  const { action, query, photo_references, maxwidth = 600 } = req.query;
 
   try {
-    // 1) 동네명으로 식당 목록 검색 (상세정보 포함) — 한번에 10개 가져옴
     if (action === 'search') {
       const searchUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&language=ko&region=kr&key=${API_KEY}`;
       const searchRes = await fetch(searchUrl);
@@ -25,9 +24,8 @@ export default async function handler(req, res) {
         return res.status(200).json({ results: [] });
       }
 
-      // 상위 10개만 상세정보 병렬 조회
       const top = searchData.results.slice(0, 10);
-      const fields = 'name,rating,user_ratings_total,formatted_address,photos,price_level,opening_hours,place_id';
+      const fields = 'name,rating,user_ratings_total,formatted_address,photos,price_level,opening_hours,place_id,types';
       const details = await Promise.all(
         top.map(async (place) => {
           try {
@@ -44,12 +42,18 @@ export default async function handler(req, res) {
       return res.status(200).json({ results: details });
     }
 
-    // 2) 사진 URL 반환 (리다이렉트 따라가서 실제 이미지 URL 반환)
     if (action === 'photo') {
-      const { photo_reference, maxwidth = 600 } = req.query;
-      const url = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=${maxwidth}&photo_reference=${photo_reference}&key=${API_KEY}`;
-      const r = await fetch(url, { redirect: 'follow' });
-      return res.status(200).json({ photo_url: r.url });
+      const refs = (photo_references || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 2);
+      const urls = await Promise.all(refs.map(async (ref) => {
+        try {
+          const url = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=${maxwidth}&photo_reference=${ref}&key=${API_KEY}`;
+          const r = await fetch(url, { redirect: 'follow' });
+          return r.url || null;
+        } catch {
+          return null;
+        }
+      }));
+      return res.status(200).json({ photo_urls: urls.filter(Boolean) });
     }
 
     return res.status(400).json({ error: 'Invalid action' });
