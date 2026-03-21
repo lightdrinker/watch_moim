@@ -347,6 +347,7 @@ input:focus,select:focus{outline:none;border-color:#1D9E75}
       <p class="result-location-tag" id="res-area"></p>
       <p class="result-name" id="res-name"></p>
       <p class="result-desc" id="res-desc"></p>
+      <p id="res-menu" style="display:none;font-size:13px;color:#0F6E56;background:#E1F5EE;padding:8px 12px;border-radius:8px;margin-bottom:12px"></p>
       <div class="result-meta-row" id="res-meta-row"></div>
       <div class="result-actions">
         <a id="res-naver-link" href="#" target="_blank" class="btn-result-naver">🗺 네이버맵으로 보기</a>
@@ -641,104 +642,150 @@ async function placesPhoto(photo_reference){
 
 async function getRecommend(){
   go('s-loading');
-  // 로딩 스텝 초기화
-  for(let i=0;i<5;i++){
-    const el=document.getElementById('lstep-'+i);
-    if(el){el.classList.remove('done','active');}
-  }
+  for(let i=0;i<5;i++){const el=document.getElementById('lstep-'+i);if(el)el.classList.remove('done','active');}
   advanceStep(0);
 
   const locs=S.participants.map(p=>p.loc).join(', ');
   const fbSum=buildFBSummary();
 
-  // Step 1: Claude로 동네 + 식당명 3개 추천
+  // STEP 1: Claude가 동네만 결정
   advanceStep(1);
-  const prompt=`당신은 서울 모임 장소 전문가입니다.
-
+  let area='홍대', areaReason='참여자들의 중간 지점으로 다양한 모임 장소가 있어요.';
+  try{
+    const areaPrompt=`서울 모임 장소 전문가입니다.
 모임 성격: ${S.filterA}
 참여자 출발 위치: ${locs}
-세부 조건 집계: ${fbSum}
+세부 조건: ${fbSum}
 총 인원: ${S.totalCount}명
 
-위 참여자들의 출발지를 분석해서 이동 거리가 최대한 균등한 서울 동네 1곳을 선정하고, 그 동네에서 실제로 영업 중인 식당/카페 3곳을 추천해주세요.
-
-중요: 식당명은 실제로 존재하는 곳이어야 합니다. 형식은 반드시 "동네명 업종 '상호명'" 형태로 작성하세요. 예: 신촌 사케바 '긴', 홍대 이자카야 '토리마루', 합정 와인바 '뱅크'.
+위 출발지들의 지리적 중간 지점을 계산해서, 모임 성격에도 어울리는 서울 동네 1곳을 골라주세요.
+동네는 실제 서울 상권명으로 (예: 홍대, 신촌, 강남역, 이태원, 합정, 성수, 건대 등).
+Google Places 검색어로 쓸 것이므로 간결하게.
 
 JSON만 반환:
-{
-  "area": "동네명",
-  "area_reason": "이 동네를 선정한 이유 (출발지 균등성 + 모임 조건 적합성, 2문장)",
-  "restaurants": [
-    {
-      "display_name": "동네명 업종 '상호명'",
-      "search_query": "상호명 동네명 서울",
-      "description": "추천 이유 1~2문장 (조건 반영 명시)",
-      "filter_match": "어떤 조건을 충족하는지",
-      "tags": ["태그1","태그2","태그3"]
-    }
-  ]
-}`;
+{"area":"동네명","area_reason":"선정 이유 2문장"}`;
 
-  let claudeRec=null;
-  try{
-    advanceStep(2);
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
+    const areaRes=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1200,messages:[{role:'user',content:prompt}]})
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:200,messages:[{role:'user',content:areaPrompt}]})
     });
-    const data=await res.json();
-    const text=data.content.map(c=>c.text||'').join('');
-    claudeRec=JSON.parse(text.replace(/```json|```/g,'').trim());
+    const areaData=await areaRes.json();
+    const areaText=areaData.content.map(c=>c.text||'').join('');
+    const areaParsed=JSON.parse(areaText.replace(/```json|```/g,'').trim());
+    area=areaParsed.area;
+    areaReason=areaParsed.area_reason;
+  }catch(e){}
+
+  // STEP 2: Google Places로 해당 동네 실제 식당 검색
+  advanceStep(2);
+  const searchKeyword=buildSearchKeyword(area);
+  let placesResults=[];
+  try{
+    const searchRes=await fetch(`/api/places?action=search&query=${encodeURIComponent(searchKeyword)}`);
+    const searchData=await searchRes.json();
+    placesResults=searchData.results||[];
+  }catch(e){}
+
+  // STEP 3: Claude가 검색 결과 중 조건에 맞는 3개 선별 + 설명 + 대표 메뉴 추가
+  advanceStep(3);
+  const placesList=placesResults.slice(0,10).map((p,i)=>
+    `${i+1}. 이름: ${p.name}, 평점: ${p.rating||'없음'}, 주소: ${p.formatted_address||p.vicinity||''}, 영업여부: ${p.opening_hours?.open_now!=null?(p.opening_hours.open_now?'영업중':'영업종료'):'알수없음'}`
+  ).join('\n');
+
+  let selected=[];
+  try{
+    const selectPrompt=`아래는 Google Places에서 실제로 검색된 ${area} 근처 식당 목록이에요.
+
+${placesList}
+
+모임 조건:
+- 모임 성격: ${S.filterA}
+- 세부 조건: ${fbSum}
+- 인원: ${S.totalCount}명
+
+위 실제 식당 목록 중에서 조건에 가장 잘 맞는 3개를 골라주세요.
+각 식당에 대해 추천 이유, 이 식당에서 꼭 먹어봐야 할 대표 메뉴 2~3개, 조건 충족 요약을 작성해주세요.
+
+JSON만 반환:
+[
+  {
+    "index": 목록에서의 번호(1부터),
+    "description": "추천 이유 1~2문장",
+    "menu": "대표 메뉴: 메뉴명1, 메뉴명2",
+    "filter_match": "조건 충족 요약",
+    "tags": ["태그1","태그2","태그3"]
+  }
+]`;
+
+    const selectRes=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:800,messages:[{role:'user',content:selectPrompt}]})
+    });
+    const selectData=await selectRes.json();
+    const selectText=selectData.content.map(c=>c.text||'').join('');
+    selected=JSON.parse(selectText.replace(/```json|```/g,'').trim());
   }catch(e){
-    claudeRec={
-      area:'홍대',
-      area_reason:'참여자들의 중간 지점으로 지하철 2호선으로 모두 접근 가능해요. 술자리에 맞는 포차와 이자카야가 밀집해 있어요.',
+    // 선별 실패시 상위 3개 그냥 사용
+    selected=placesResults.slice(0,3).map((_,i)=>({
+      index:i+1,description:'조건에 맞는 식당이에요.',menu:'',filter_match:S.filterA,tags:[]
+    }));
+  }
+
+  // STEP 4: 사진 가져오기
+  advanceStep(4);
+  const enriched=await Promise.all(selected.map(async(sel)=>{
+    const place=placesResults[sel.index-1];
+    if(!place)return null;
+    let photo_url=null;
+    if(place.photos&&place.photos.length>0){
+      try{
+        const pr=await fetch(`/api/places?action=photo&photo_reference=${encodeURIComponent(place.photos[0].photo_reference)}&maxwidth=600`);
+        const pd=await pr.json();
+        photo_url=pd.photo_url||null;
+      }catch(e){}
+    }
+    return{
+      display_name:place.name,
+      description:sel.description,
+      menu:sel.menu||'',
+      filter_match:sel.filter_match,
+      tags:sel.tags||[],
+      rating:place.rating||null,
+      price_level:place.price_level||null,
+      address:place.formatted_address||place.vicinity||'',
+      photo_url,
+      naver_url:`https://map.naver.com/v5/search/${encodeURIComponent(place.name+' '+area)}`
+    };
+  }));
+
+  const validRestaurants=enriched.filter(Boolean);
+
+  // Places 검색 결과가 없으면 fallback
+  if(validRestaurants.length===0){
+    S.rec={
+      area,areaReason,
       restaurants:[
-        {display_name:"홍대 이자카야 '토리마루'",search_query:'토리마루 홍대 서울',description:'닭꼬치 전문 이자카야로 사케와 맥주가 잘 어울려요.',filter_match:'사케/맥주 전문',tags:['이자카야','닭꼬치','사케']},
-        {display_name:"연남동 포차 '연남포차'",search_query:'연남포차 연남동 서울',description:'감성 포차 분위기로 소주 한 잔 하기 딱 좋아요.',filter_match:'소주 전문 포차',tags:['포차','소주','감성']},
-        {display_name:"합정 와인바 '뱅크'",search_query:'뱅크 와인바 합정 서울',description:'내추럴 와인 전문점으로 조용하고 모던한 분위기예요.',filter_match:'와인 전문',tags:['와인','내추럴','모던']}
+        {display_name:'검색 결과 없음',description:'Google Places 검색 결과가 없어요. 직접 네이버맵에서 검색해보세요.',menu:'',filter_match:'',tags:[],rating:null,price_level:null,photo_url:null,naver_url:`https://map.naver.com/v5/search/${encodeURIComponent(area+' '+S.filterA)}`}
       ]
     };
+  }else{
+    S.rec={area,area_reason:areaReason,restaurants:validRestaurants};
   }
 
-  // Step 2: Google Places로 실제 식당 검색
-  advanceStep(3);
-  const enriched=[];
-  for(const r of claudeRec.restaurants){
-    let placeData={
-      display_name:r.display_name,
-      description:r.description,
-      filter_match:r.filter_match,
-      tags:r.tags,
-      photo_url:null,
-      rating:null,
-      price_level:null,
-      address:null,
-      place_url:null,
-      naver_url:`https://map.naver.com/v5/search/${encodeURIComponent(r.search_query)}`
-    };
-    try{
-      const searchRes=await placesSearch(r.search_query);
-      if(searchRes.results&&searchRes.results.length>0){
-        const place=searchRes.results[0];
-        placeData.rating=place.rating;
-        placeData.price_level=place.price_level;
-        placeData.address=place.formatted_address||place.vicinity;
-        placeData.place_url=place.url;
-        if(place.photos&&place.photos.length>0){
-          advanceStep(4);
-          try{
-            placeData.photo_url=await placesPhoto(place.photos[0].photo_reference);
-          }catch(e){}
-        }
-      }
-    }catch(e){}
-    enriched.push(placeData);
-  }
-
-  S.rec={...claudeRec,restaurants:enriched};
   setupVote();
   go('s-vote');
+}
+
+function buildSearchKeyword(area){
+  const keywordMap={
+    '술자리':'서울 '+area+' 이자카야 포차',
+    '청첩모임':'서울 '+area+' 한정식 레스토랑',
+    '단체회식':'서울 '+area+' 단체 식당',
+    '가족모임':'서울 '+area+' 가족 식당',
+    '가볍게식사':'서울 '+area+' 맛집',
+    '카페디저트':'서울 '+area+' 카페'
+  };
+  return keywordMap[S.filterA]||'서울 '+area+' 맛집';
 }
 
 function priceLevel(n){
@@ -772,6 +819,7 @@ function setupVote(){
         <p class="rest-name">${r.display_name}</p>
         ${ratingHtml||priceHtml?`<div class="rest-meta">${ratingHtml}${priceHtml}</div>`:''}
         <p class="rest-desc">${r.description}</p>
+        ${r.menu?`<p style="font-size:12px;color:#0F6E56;margin-bottom:8px;background:#E1F5EE;padding:6px 10px;border-radius:6px">🍴 ${r.menu}</p>`:''}
         <div class="rest-tags">
           ${(r.tags||[]).map(t=>`<span class="rest-tag">${t}</span>`).join('')}
           <span class="filter-badge">✓ ${r.filter_match}</span>
@@ -814,6 +862,8 @@ function submitVote(){
   document.getElementById('res-area').textContent=S.rec.area;
   document.getElementById('res-name').textContent=w.display_name;
   document.getElementById('res-desc').textContent=w.description;
+  const resMenu=document.getElementById('res-menu');
+  if(resMenu){resMenu.textContent=w.menu?'🍴 '+w.menu:'';resMenu.style.display=w.menu?'block':'none';}
 
   // 사진
   if(w.photo_url){
