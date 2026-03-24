@@ -21,7 +21,12 @@ export default async function handler(req, res) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.7, maxOutputTokens: 1500 }
+          generationConfig: { 
+            temperature: 0.7, 
+            maxOutputTokens: 1500,
+            // [Review Point] JSON 포맷 강제. 프론트엔드 파싱 에러를 원천 차단합니다.
+            responseMimeType: "application/json" 
+          }
         })
       });
       const data = await r.json();
