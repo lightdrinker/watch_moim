@@ -69,7 +69,7 @@ export default async function handler(req, res) {
     // 좌표 기반 주변 식당 검색
     if (action === 'nearby') {
       const { lat, lng, keyword } = req.query;
-      const nearbyUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(keyword)}&location=${lat},${lng}&radius=1500&language=ko&region=kr&key=${API_KEY}`;
+      const nearbyUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(keyword)}&location=${lat},${lng}&radius=1000&language=ko&region=kr&key=${API_KEY}`;
       const nearbyRes = await fetch(nearbyUrl);
       const nearbyData = await nearbyRes.json();
       if (!nearbyData.results || nearbyData.results.length === 0) return res.status(200).json({ results: [] });
