@@ -309,7 +309,7 @@ input:focus,select:focus{outline:none;border-color:#1D9E75}
       <div class="loading-steps">
         <div class="loading-step active" id="lstep-0"><span class="step-dot"></span>출발지 분석 중...</div>
         <div class="loading-step" id="lstep-1"><span class="step-dot"></span>중간 지점 계산 중...</div>
-        <div class="loading-step" id="lstep-2"><span class="step-dot"></span>Claude가 동네 선정 중...</div>
+        <div class="loading-step" id="lstep-2"><span class="step-dot"></span>AI가 동네 선정 중...</div>
         <div class="loading-step" id="lstep-3"><span class="step-dot"></span>실제 식당 검색 중...</div>
         <div class="loading-step" id="lstep-4"><span class="step-dot"></span>사진 및 정보 가져오는 중...</div>
       </div>
@@ -409,7 +409,7 @@ const FB={
   '카페디저트':{type:'single',label:'어떤 카페를 원하세요?',hint:'메인 메뉴에 따라 카페 스타일이 달라져요',opts:['빵/베이커리 메인','음료/커피 메인','둘 다 좋아요']}
 };
 
-// 서울 + 경기 주요 지역 풀 — 직장/주거 다양하게
+// 서울 + 경기 주요 지역 풀
 const SEOUL_AREAS=[
   '강남역','선릉역','역삼역','삼성역','교대역','서초역','잠실역','건대입구역','성수역','왕십리역','뚝섬역',
   '종로3가역','을지로입구역','시청역','혜화역','동대문역','서울역','용산역','이태원역',
@@ -620,7 +620,6 @@ function buildFBSummary(){
   return '없음';
 }
 
-// 로딩 스텝 진행
 function advanceStep(i){
   for(let j=0;j<i;j++){
     const el=document.getElementById('lstep-'+j);
@@ -630,10 +629,8 @@ function advanceStep(i){
   if(cur)cur.classList.add('active');
 }
 
-// 데모 모드 감지 (로컬 파일 or 캔버스 미리보기 환경)
 const IS_DEMO = (location.hostname==='localhost'||location.protocol==='blob:'||location.hostname===''||location.hostname==='null'||location.href.startsWith('blob:'));
 
-// 데모용 가짜 식당 데이터
 const DEMO_RESTAURANTS = {
   '술자리':[
     {display_name:'포차23',description:'골목 안쪽에 숨어있는 포장마차 감성 이자카야. 주인장이 직접 담근 막걸리 사워로 현지인들한테 입소문 난 곳.',menu:'막걸리 사워, 감자전, 고기산적',filter_match:'술자리 분위기 딱 맞는 포장마차 감성',tags:['새벽2시까지','웨이팅 있음','포장마차 감성','혼술 가능'],rating:4.5,user_ratings_total:342,price_level:2,photo_urls:['https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600','https://images.unsplash.com/photo-1544025162-d76694265947?w=600'],naver_url:'https://map.naver.com/p/search/포차23'},
@@ -667,28 +664,21 @@ const DEMO_RESTAURANTS = {
   ]
 };
 
-// 데모 중간지점 계산 (가짜 좌표 기반)
 function calcDemoMidpoint(locs){
   const coordMap={
-    // 서울 강남/동쪽
     '강남역':{lat:37.4979,lng:127.0276},'선릉역':{lat:37.5045,lng:127.0492},'역삼역':{lat:37.5004,lng:127.0362},
     '삼성역':{lat:37.5087,lng:127.0630},'교대역':{lat:37.4929,lng:127.0137},'서초역':{lat:37.4836,lng:127.0324},
     '잠실역':{lat:37.5133,lng:127.1001},'건대입구역':{lat:37.5404,lng:127.0700},'성수역':{lat:37.5445,lng:127.0558},
     '왕십리역':{lat:37.5615,lng:127.0375},'뚝섬역':{lat:37.5481,lng:127.0479},
-    // 서울 강북/중심
     '종로3가역':{lat:37.5709,lng:126.9919},'을지로입구역':{lat:37.5661,lng:126.9822},'시청역':{lat:37.5657,lng:126.9769},
     '혜화역':{lat:37.5820,lng:127.0019},'동대문역':{lat:37.5716,lng:127.0100},'서울역':{lat:37.5547,lng:126.9706},
     '용산역':{lat:37.5298,lng:126.9647},'이태원역':{lat:37.5340,lng:126.9945},
-    // 서울 서쪽/마포
     '홍대입구역':{lat:37.5571,lng:126.9237},'신촌역':{lat:37.5557,lng:126.9368},'합정역':{lat:37.5495,lng:126.9137},
     '마포구청역':{lat:37.5497,lng:126.9498},'상수역':{lat:37.5481,lng:126.9220},'망원역':{lat:37.5558,lng:126.9101},
-    // 서울 북쪽
     '노원역':{lat:37.6547,lng:127.0566},'창동역':{lat:37.6527,lng:127.0474},'수유역':{lat:37.6374,lng:127.0254},
-    // 서울 남쪽
     '사당역':{lat:37.4764,lng:126.9817},'노량진역':{lat:37.5136,lng:126.9424},'영등포역':{lat:37.5155,lng:126.9071},
     '여의도역':{lat:37.5216,lng:126.9242},'신림역':{lat:37.4843,lng:126.9292},
     '구로디지털단지역':{lat:37.4851,lng:126.9014},'가산디지털단지역':{lat:37.4815,lng:126.8826},
-    // 경기 주요
     '판교역':{lat:37.3944,lng:127.1110},'정자역':{lat:37.3597,lng:127.1117},'분당구청역':{lat:37.3864,lng:127.1231},
     '수원역':{lat:37.2663,lng:127.0022},'광교중앙역':{lat:37.2946,lng:127.0508},
     '평촌역':{lat:37.3892,lng:126.9527},'범계역':{lat:37.3960,lng:126.9527},
@@ -696,7 +686,6 @@ function calcDemoMidpoint(locs){
     '화정역':{lat:37.7226,lng:126.8307},'의정부역':{lat:37.7382,lng:127.0430},
     '광명역':{lat:37.4178,lng:126.8648},'부천역':{lat:37.5036,lng:126.7810},
     '안양역':{lat:37.3957,lng:126.9570},'군포역':{lat:37.3618,lng:126.9338},
-    // 직장 밀집
     '판교테크노밸리':{lat:37.4024,lng:127.1078},'강남구 테헤란로':{lat:37.5052,lng:127.0536},
     '여의도 IFC':{lat:37.5255,lng:126.9244},'상암동':{lat:37.5820,lng:126.8893}
   };
@@ -714,7 +703,6 @@ function calcDemoMidpoint(locs){
     const mx=Math.max(...coords.map(c=>Math.sqrt(((lat-c.lat)*111)**2+((lng-c.lng)*111*Math.cos(lat*Math.PI/180))**2)));
     if(mx<bestMax){bestMax=mx;bestLat=lat;bestLng=lng;}
   }
-  // Fix 4: 중간 지점에서 가장 가까운 역 찾기
   let nearestStation='중간지점';let nearestDist=Infinity;
   Object.entries(coordMap).forEach(([k,v])=>{
     const d=Math.sqrt(((bestLat-v.lat)*111)**2+((bestLng-v.lng)*111)**2);
@@ -723,7 +711,6 @@ function calcDemoMidpoint(locs){
   return{area:nearestStation,lat:bestLat,lng:bestLng,maxDistKm:Math.round(bestMax*10)/10};
 }
 
-// Gemini API 호출 헬퍼 — Vercel 프록시 경유
 async function callGemini(prompt){
   const r=await fetch('/api/places?action=gemini',{
     method:'POST',
@@ -734,8 +721,8 @@ async function callGemini(prompt){
   return d.text||'';
 }
 
+// [Review Point] GetRecommend 함수 전체 로직 수정본
 async function getRecommend(){
-  // 데모 모드 (API 없이 미리보기)
   if(IS_DEMO){
     go('s-loading');
     for(let i=0;i<5;i++){const el=document.getElementById('lstep-'+i);if(el)el.classList.remove('done','active');}
@@ -756,13 +743,14 @@ async function getRecommend(){
     setupVote();go('s-vote');
     return;
   }
+  
   go('s-loading');
   for(let i=0;i<5;i++){const el=document.getElementById('lstep-'+i);if(el)el.classList.remove('done','active');}
   advanceStep(0);
 
   const fbSum=buildFBSummary();
 
-  // STEP 1: 참여자 위치 → 좌표 변환 (Geocoding)
+  // STEP 1: 참여자 위치 → 좌표 변환
   advanceStep(1);
   let coords=[];
   try{
@@ -784,30 +772,24 @@ async function getRecommend(){
   try{
     let centerLat, centerLng;
     if(coords.length>=2){
-      // 지리적 중간점: 단순 평균 대신 각 참여자로부터 최대 거리 최소화하는 minimax 방식
-      // 후보 격자 생성 (출발지 범위 안에서 10x10 격자)
       const minLat=Math.min(...coords.map(c=>c.lat));
       const maxLat=Math.max(...coords.map(c=>c.lat));
       const minLng=Math.min(...coords.map(c=>c.lng));
       const maxLng=Math.max(...coords.map(c=>c.lng));
       
-      // 범위가 너무 좁으면 (같은 동네) 그냥 평균 사용
       const latSpan=maxLat-minLat;
       const lngSpan=maxLng-minLng;
       
       if(latSpan<0.005&&lngSpan<0.005){
-        // 매우 가까운 경우 — 단순 평균
         centerLat=coords.reduce((s,c)=>s+c.lat,0)/coords.length;
         centerLng=coords.reduce((s,c)=>s+c.lng,0)/coords.length;
       } else {
-        // 격자 후보 중 "최대 이동거리를 최소화"하는 지점 찾기 (minimax)
         const steps=20;
         let bestLat=0,bestLng=0,bestMaxDist=Infinity;
         for(let i=0;i<=steps;i++){
           for(let j=0;j<=steps;j++){
             const lat=minLat+(maxLat-minLat)*i/steps;
             const lng=minLng+(maxLng-minLng)*j/steps;
-            // 각 참여자까지 거리 (haversine 근사)
             const dists=coords.map(c=>{
               const dlat=(lat-c.lat)*111000;
               const dlng=(lng-c.lng)*111000*Math.cos(lat*Math.PI/180);
@@ -825,12 +807,10 @@ async function getRecommend(){
       centerLat=37.5665; centerLng=126.9780;
     }
 
-    // 중간 좌표로 주변 식당 검색 (반경 1km)
     const keyword=buildSearchKeyword('');
     const r=await fetch(`/api/places?action=nearby&lat=${centerLat}&lng=${centerLng}&keyword=${encodeURIComponent(keyword)}`);
     const d=await r.json();
 
-    // 없는 식당 필터링: 리뷰 10개 미만 또는 평점 없는 곳 제외
     const rawResults=d.results||[];
     placesResults=rawResults.filter(p=>{
       if(!p.name)return false;
@@ -844,17 +824,19 @@ async function getRecommend(){
     if(placesResults.length<3){
       placesResults=rawResults.filter(p=>p.name);
     }
-
-    // 리뷰 많은 순으로 정렬
     placesResults.sort((a,b)=>(b.user_ratings_total||0)-(a.user_ratings_total||0));
 
-    // Fix 4: 중간지점에서 가장 가까운 지하철역 찾기 (Geocoding으로 역명 추출)
+    // [Review Point] 중심점을 가까운 지하철역으로 스냅 + 깔끔한 UI 명칭 추출
     try{
       const stationR=await fetch(`/api/places?action=nearby&lat=${centerLat}&lng=${centerLng}&keyword=${encodeURIComponent('지하철역')}`);
       const stationD=await stationR.json();
       const stations=(stationD.results||[]).filter(p=>p.name&&p.name.includes('역'));
+      
+      const addr=placesResults[0]?.formatted_address||'';
+      const match=addr.match(/([^\s]+동|[^\s]+가)/);
+      const dongName = match ? match[1] : '';
+
       if(stations.length>0){
-        // 중간지점에서 가장 가까운 역
         const nearest=stations.reduce((best,s)=>{
           if(!s.geometry||!s.geometry.location)return best;
           const dlat=(centerLat-s.geometry.location.lat)*111;
@@ -862,35 +844,30 @@ async function getRecommend(){
           const dist=Math.sqrt(dlat*dlat+dlng*dlng);
           return(!best||dist<best.dist)?{name:s.name,dist}:best;
         },null);
-        if(nearest)area=nearest.name;
-        else{
-          // fallback: 식당 주소에서 동 추출
-          const addr=placesResults[0]?.formatted_address||'';
-          const match=addr.match(/([^\s]+동|[^\s]+가)/);
-          area=match?`${match[1]} 일대`:addr.split(' ')[2]||'중간지점';
+        
+        if(nearest) {
+          // 예: 성수역 · 연무장길
+          area = dongName ? `${nearest.name} · ${dongName}` : `${nearest.name} 일대`;
+        } else {
+          area = dongName ? `${dongName} 일대` : '중간지점';
         }
       } else {
-        const addr=placesResults[0]?.formatted_address||'';
-        const match=addr.match(/([^\s]+동|[^\s]+가)/);
-        area=match?`${match[1]} 일대`:addr.split(' ')[2]||'중간지점';
+        area = dongName ? `${dongName} 일대` : '중간지점';
       }
     }catch(e){
-      const addr=placesResults[0]?.formatted_address||'';
-      const match=addr.match(/([^\s]+동|[^\s]+가)/);
-      area=match?`${match[1]} 일대`:'중간지점';
+      area = '중간지점';
     }
 
-    // 각 참여자 최대 이동거리 계산 (표시용)
     const maxDistKm=coords.length>0?Math.round(Math.max(...coords.map(c=>{
       const dlat=(centerLat-c.lat)*111;
       const dlng=(centerLng-c.lng)*111*Math.cos(centerLat*Math.PI/180);
       return Math.sqrt(dlat*dlat+dlng*dlng);
     }))*10)/10:0;
 
-    areaReason=`참여자 ${coords.length}명 중 누구도 가장 멀리 가지 않도록 계산한 중간 지점이에요. 최대 이동거리 약 ${maxDistKm}km. 모임 성격(${S.filterA})에 맞는 식당들이에요.`;
+    areaReason=`참여자 ${coords.length}명 중 누구도 가장 멀리 가지 않도록 계산한 최적의 중간 지점이에요. 최대 이동거리 약 ${maxDistKm}km.`;
   }catch(e){}
 
-  // STEP 3: Gemini가 실제 정보 기반 선별 + 생생한 코멘트 + 특징 태그
+  // STEP 3: Gemini API 호출 (구조화된 JSON 응답 보장)
   advanceStep(3);
   const placesList=placesResults.slice(0,10).map((p,i)=>{
     const hours=p.opening_hours?.open_now!=null?(p.opening_hours.open_now?'영업중':'영업종료'):'영업시간 미확인';
@@ -901,8 +878,7 @@ async function getRecommend(){
   let selected=[];
   if(placesList){
     try{
-      const selectPrompt=`아래는 Google Places에서 실제 검색된 식당/술집 목록입니다.
-
+      const selectPrompt=`아래는 검색된 식당/술집 목록입니다.
 ${placesList}
 
 모임 조건:
@@ -911,39 +887,22 @@ ${placesList}
 - 인원: ${S.totalCount}명
 
 위 목록에서 조건에 가장 잘 맞는 3곳을 골라주세요.
-
-규칙:
-- description: 이 식당만의 분위기와 특징, 왜 이 모임에 딱 맞는지 생생하게 2문장. "분위기 좋은 곳이에요" 같은 뻔한 말 절대 금지.
-- menu: 이 식당의 대표 메뉴 2~3개 (실제 있을 법한 메뉴명)
-- tags: 실제 특징 태그 3~5개. "루프탑", "새벽2시까지", "단체석 가능", "웨이팅 있음", "주차 가능", "조용한 분위기", "포장마차 감성", "혼술 가능" 등 구체적으로
-- filter_match: ${S.filterA} 모임에 이 식당이 어울리는 핵심 이유 한 줄
-
-반드시 JSON 배열만 반환 (다른 텍스트 없이):
-[{"index":1,"description":"...","menu":"...","tags":["..."],"filter_match":"..."}]`;
+반드시 JSON 배열만 반환하세요.
+형식: [{"index":1,"description":"생생한 2문장 설명","menu":"대표메뉴 2개","tags":["구체적 태그1","태그2","태그3"],"filter_match":"모임에 어울리는 핵심 이유 1줄"}]`;
 
       const selectText=await callGemini(selectPrompt);
-      // Fix 1: 더 robust한 파싱 — 다양한 형태의 Gemini 응답 처리
-      let clean=selectText
-        .replace(/```json\s*/gi,'').replace(/```\s*/g,'')
-        .replace(/^[^[]*(\[)/,'$1')  // [ 이전 텍스트 제거
-        .replace(/(\])[^\]]*$/,'$1') // ] 이후 텍스트 제거
-        .trim();
-      // JSON 파싱 시도, 실패 시 정규식으로 배열 추출
-      try{
-        selected=JSON.parse(clean);
-      }catch(e1){
-        const match=clean.match(/\[[\s\S]*\]/);
-        if(match)try{selected=JSON.parse(match[0]);}catch(e2){}
-      }
+      // [Review Point] 서버에서 application/json을 강제했으므로 클린업 정규식 없이 완벽한 파싱을 기대할 수 있습니다.
+      selected=JSON.parse(selectText.trim());
     }catch(e){
+      console.warn("Gemini Parsing failed, falling back", e);
       selected=placesResults.slice(0,3).map((_,i)=>({index:i+1,description:'이 동네에서 인기 있는 곳이에요.',menu:'',filter_match:S.filterA,tags:[]}));
     }
   }
 
-  // STEP 4: 사진 2장씩 가져오기
+  // STEP 4: 사진 가져오기 및 네이버맵 주소+상호명 결합
   advanceStep(4);
   const enriched=await Promise.all(selected.map(async(sel)=>{
-    const place=placesResults[sel.index-1];
+    const place=placesResults[sel.index-1] || placesResults[0];
     if(!place)return null;
     let photo_urls=[];
     if(place.photos&&place.photos.length>0){
@@ -954,6 +913,12 @@ ${placesList}
         photo_urls=pd.photo_urls||[];
       }catch(e){}
     }
+    
+    // [Review Point] 네이버맵 정확도 향상을 위해 [주소 + 상호명] 결합 (대한민국 제거)
+    const nMapQuery = place.formatted_address 
+      ? `${place.formatted_address.replace('대한민국 ', '')} ${place.name}`
+      : place.name;
+
     return{
       display_name:place.name,
       description:sel.description,
@@ -965,10 +930,7 @@ ${placesList}
       price_level:place.price_level||null,
       address:place.formatted_address||'',
       photo_urls,
-      // Fix 2: 주소로 검색 (지점명 혼동, 영문명 문제 방지)
-      naver_url: place.formatted_address
-        ? `https://map.naver.com/p/search/${encodeURIComponent(place.formatted_address)}`
-        : `https://map.naver.com/p/search/${encodeURIComponent(place.name)}`
+      naver_url: `https://map.naver.com/p/search/${encodeURIComponent(nMapQuery)}`
     };
   }));
 
@@ -976,12 +938,11 @@ ${placesList}
   S.rec={
     area,
     area_reason:areaReason,
-    restaurants:valid.length>0?valid:[{display_name:'검색 결과 없음',description:'직접 네이버맵에서 검색해보세요.',menu:'',filter_match:'',tags:[],rating:null,photo_urls:[],naver_url:`https://map.naver.com/p/search/${encodeURIComponent(S.filterA+' 서울')}`}]
+    restaurants:valid.length>0?valid:[{display_name:'검색 결과 없음',description:'직접 네이버맵에서 검색해보세요.',menu:'',filter_match:'',tags:[],rating:null,photo_urls:[],naver_url:`https://map.naver.com/p/search/${encodeURIComponent(S.filterA)}`}]
   };
   setupVote();
   go('s-vote');
 }
-
 
 function buildSearchKeyword(area){
   const prefix=area?'서울 '+area+' ':'서울 ';
@@ -996,7 +957,7 @@ function priceLevel(n){
 
 function setupVote(){
   voteOrder=[];
-  const areaLabel=S.rec.area.includes('역')?S.rec.area+' 근처':S.rec.area;
+  const areaLabel=S.rec.area; // 이미 위에서 "성수역 · 연무장길" 로 정제됨
   document.getElementById('vote-sub').textContent='📍 '+areaLabel+' 식당 3곳';
   document.getElementById('area-header-wrap').innerHTML=`
     <div class="area-header">
@@ -1009,7 +970,6 @@ function setupVote(){
     const card=document.createElement('div');
     card.className='rest-card';card.id='vc-'+i;card.onclick=()=>castVote(i);
 
-    // 사진 처리 - photo_urls가 있으면 사용, 없으면 카테고리별 그라디언트 플레이스홀더
     const photo1=r.photo_urls&&r.photo_urls[0];
     const photo2=r.photo_urls&&r.photo_urls[1];
     const ph1=`<div class="rest-photo-ph rest-photo" style="display:flex;align-items:center;justify-content:center;font-size:40px;background:linear-gradient(135deg,#e8f5e9,#f1f8e9)">🏠</div>`;
@@ -1066,7 +1026,6 @@ function castVote(idx){
 function submitVote(){
   const scores=S.rec.restaurants.map(()=>0);
   voteOrder.forEach((pi,ri)=>scores[pi]+=(3-ri));
-  // 나 제외 나머지 참여자 시뮬레이션 — 인원수 무관하게 동작
   const otherCount=Math.max(0,S.participants.length-1);
   const demoOrders=[[1,0,2],[0,2,1],[2,1,0],[0,1,2],[2,0,1],[1,2,0]];
   for(let i=0;i<otherCount;i++){
@@ -1077,15 +1036,13 @@ function submitVote(){
   const wi=scores.indexOf(Math.max(...scores));
   const w=S.rec.restaurants[wi];
 
-  // 결과 화면 세팅
   document.getElementById('res-sub').textContent=S.roomName+' · '+S.filterAIcon+' '+S.filterA;
-  document.getElementById('res-area').textContent=S.rec.area.includes('역')?S.rec.area+' 근처':S.rec.area;
+  document.getElementById('res-area').textContent=S.rec.area;
   document.getElementById('res-name').textContent=w.display_name;
   document.getElementById('res-desc').textContent=w.description;
   const resMenu=document.getElementById('res-menu');
   if(resMenu){resMenu.textContent=w.menu?'🍴 '+w.menu:'';resMenu.style.display=w.menu?'block':'none';}
 
-  // 사진
   const resImg=document.getElementById('res-photo');
   const resPlaceholder=document.getElementById('res-photo-placeholder');
   const winPhoto=w.photo_urls&&w.photo_urls[0]||w.photo_url||null;
@@ -1094,7 +1051,6 @@ function submitVote(){
     resImg.src=winPhoto;resImg.style.display='block';resPlaceholder.style.display='none';
   }
 
-  // 메타 (평점, 가격)
   const metaRow=document.getElementById('res-meta-row');
   metaRow.innerHTML='';
   if(w.rating){
@@ -1105,10 +1061,8 @@ function submitVote(){
   }
   metaRow.innerHTML+=`<div class="result-meta-item"><div class="meta-val">${S.participants.length}명</div><div class="meta-key">인원</div></div>`;
 
-  // 네이버맵 링크
-  document.getElementById('res-naver-link').href=w.naver_url||`https://map.naver.com/v5/search/${encodeURIComponent(w.display_name)}`;
+  document.getElementById('res-naver-link').href=w.naver_url;
 
-  // 2·3위
   const runnerUp=document.getElementById('runner-up-list');
   runnerUp.innerHTML='';
   S.rec.restaurants.forEach((r,i)=>{
@@ -1122,7 +1076,6 @@ function submitVote(){
     runnerUp.appendChild(el);
   });
 
-  // 점수 바
   const bars=document.getElementById('res-bars');bars.innerHTML='';
   const maxS=Math.max(...scores);
   S.rec.restaurants.forEach((r,i)=>{
