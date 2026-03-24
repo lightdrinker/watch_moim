@@ -628,6 +628,63 @@ function advanceStep(i){
   if(cur)cur.classList.add('active');
 }
 
+// 데모 모드 감지 (로컬 파일 or 캔버스 미리보기 환경)
+const IS_DEMO = (location.hostname==='localhost'||location.protocol==='blob:'||location.hostname===''||location.hostname==='null'||location.href.startsWith('blob:'));
+
+// 데모용 가짜 식당 데이터
+const DEMO_RESTAURANTS = {
+  '술자리':[
+    {display_name:'포차23',description:'골목 안쪽에 숨어있는 포장마차 감성 이자카야. 주인장이 직접 담근 막걸리 사워로 현지인들한테 입소문 난 곳.',menu:'막걸리 사워, 감자전, 고기산적',filter_match:'술자리 분위기 딱 맞는 포장마차 감성',tags:['새벽2시까지','웨이팅 있음','포장마차 감성','혼술 가능'],rating:4.5,user_ratings_total:342,price_level:2,photo_urls:['https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600','https://images.unsplash.com/photo-1544025162-d76694265947?w=600'],naver_url:'https://map.naver.com/p/search/포차23'},
+    {display_name:'이자카야 하나',description:'도쿄 감성 그대로인 일본식 선술집. 카운터석에서 즉석 안주를 내줘서 혼자 와도 어색하지 않은 분위기.',menu:'모츠나베, 카라아게, 하이볼',filter_match:'일본 감성 술자리에 최적',tags:['카운터석','조용한 분위기','주차 가능'],rating:4.3,user_ratings_total:218,price_level:3,photo_urls:['https://images.unsplash.com/photo-1519984388953-d2406bc725e1?w=600','https://images.unsplash.com/photo-1547592180-85f173990554?w=600'],naver_url:'https://map.naver.com/p/search/이자카야 하나'},
+    {display_name:'술이술이',description:'한국 전통주 100여 종을 보유한 전통주 바. 소믈리에가 모임 인원과 취향에 맞는 주종을 직접 페어링해준다.',menu:'막걸리 플래터, 전통주 시음세트, 파전',filter_match:'다양한 주종 경험 원하는 술자리',tags:['전통주 전문','단체석 가능','소믈리에 있음'],rating:4.6,user_ratings_total:189,price_level:3,photo_urls:['https://images.unsplash.com/photo-1551024709-8f23befc6f87?w=600','https://images.unsplash.com/photo-1574966739987-65ffd2b38f2b?w=600'],naver_url:'https://map.naver.com/p/search/술이술이'}
+  ],
+  '단체회식':[
+    {display_name:'강남 불판집',description:'10인 이상 단체 모임에 특화된 한우 전문점. 개별 환풍 시스템과 프라이빗 룸으로 냄새 걱정 없이 즐길 수 있다.',menu:'한우 삼합, 된장찌개, 냉면',filter_match:'단체 회식 전용 공간과 시스템',tags:['독립공간','주차 가능','단체 15인 가능','발렛파킹'],rating:4.4,user_ratings_total:520,price_level:4,photo_urls:['https://images.unsplash.com/photo-1529193591184-b1d58069ecdd?w=600','https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600'],naver_url:'https://map.naver.com/p/search/강남 불판집'},
+    {display_name:'한상차림',description:'전통 한정식 방식으로 코스 요리가 나오는 곳. 미리 인원 알려주면 별도 세팅을 해줘서 중요한 회식 자리에 딱이다.',menu:'한우 갈비찜, 갈치조림, 계절 나물 코스',filter_match:'격식 있는 단체 회식',tags:['예약 필수','독립공간','개인 세팅'],rating:4.5,user_ratings_total:278,price_level:4,photo_urls:['https://images.unsplash.com/photo-1498654896293-37aacf113fd9?w=600','https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=600'],naver_url:'https://map.naver.com/p/search/한상차림'},
+    {display_name:'고기리막창',description:'직접 화로에 구워먹는 막창 전문점. 시끌벅적한 분위기가 회식 분위기 띄우는 데 최고.',menu:'막창, 대창, 돼지목살',filter_match:'활기찬 회식 분위기',tags:['웨이팅 있음','포장마차 감성','새벽1시까지'],rating:4.2,user_ratings_total:441,price_level:2,photo_urls:['https://images.unsplash.com/photo-1567188040759-fb8a883dc6d8?w=600','https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=600'],naver_url:'https://map.naver.com/p/search/고기리막창'}
+  ],
+  '가볍게식사':[
+    {display_name:'면가',description:'주문 즉시 면을 뽑아내는 수타 우동 전문점. 11시부터 2시까지만 하는 런치 한정 튀김 세트가 시그니처.',menu:'수타 우동, 튀김세트, 카레우동',filter_match:'가볍고 부담없는 점심 식사',tags:['런치 스페셜','빠른 회전','혼밥 가능'],rating:4.4,user_ratings_total:387,price_level:1,photo_urls:['https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=600','https://images.unsplash.com/photo-1618841557871-b4664fbf0cb3?w=600'],naver_url:'https://map.naver.com/p/search/면가'},
+    {display_name:'샐러드팩토리',description:'매일 새벽 들어오는 제철 채소로 만드는 샐러드 전문점. 단백질 종류를 고를 수 있어서 다이어트 중인 멤버도 OK.',menu:'시그니처 샐러드, 랩, 그린 스무디',filter_match:'가볍게 먹고 싶은 모임',tags:['건강식','빠른 회전','테이크아웃 가능'],rating:4.1,user_ratings_total:203,price_level:2,photo_urls:['https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=600','https://images.unsplash.com/photo-1540420773420-3366772f4999?w=600'],naver_url:'https://map.naver.com/p/search/샐러드팩토리'},
+    {display_name:'일상반상',description:'한 그릇 밥상 전문점. 매일 바뀌는 오늘의 반찬이 어머니 밥상 같은 집밥 감성을 준다.',menu:'오늘의 반상, 제육볶음 정식, 된장국',filter_match:'부담 없는 한식 한 끼',tags:['집밥 감성','혼밥 가능','가성비'],rating:4.3,user_ratings_total:312,price_level:1,photo_urls:['https://images.unsplash.com/photo-1547592180-85f173990554?w=600','https://images.unsplash.com/photo-1476718406336-bb5a9690ee2a?w=600'],naver_url:'https://map.naver.com/p/search/일상반상'}
+  ],
+  '카페디저트':[
+    {display_name:'브레드메이커',description:'제빵사 출신 사장이 매일 오전 6시에 굽는 천연 발효 빵 카페. 식사빵부터 달달한 페이스트리까지 종류가 40가지 넘는다.',menu:'천연발효 식빵, 크루아상, 유자 스콘',filter_match:'베이커리 카페 원하는 모임',tags:['이른 오픈','베이커리 전문','테이크아웃 가능'],rating:4.7,user_ratings_total:621,price_level:2,photo_urls:['https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600','https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=600'],naver_url:'https://map.naver.com/p/search/브레드메이커'},
+    {display_name:'스페셜티 로스터스',description:'직접 원두를 로스팅하는 스페셜티 카페. 바리스타가 원두 산지와 맛 프로파일을 설명해주는 커핑 타임이 매주 진행된다.',menu:'싱글오리진 드립, 플랫화이트, 콜드브루',filter_match:'커피 중심 카페 모임',tags:['스페셜티','조용한 분위기','작업하기 좋음'],rating:4.5,user_ratings_total:298,price_level:2,photo_urls:['https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=600','https://images.unsplash.com/photo-1442512595331-e89e73853f31?w=600'],naver_url:'https://map.naver.com/p/search/스페셜티 로스터스'},
+    {display_name:'디저트랩',description:'요리사 출신 파티시에가 운영하는 프렌치 디저트 카페. 계절마다 바뀌는 시그니처 케이크가 SNS에서 항상 화제다.',menu:'시그니처 케이크, 마카롱 세트, 레몬타르트',filter_match:'디저트 중심 카페 모임',tags:['SNS 핫플','예약 추천','포장 가능'],rating:4.6,user_ratings_total:445,price_level:3,photo_urls:['https://images.unsplash.com/photo-1488477181946-6428a0291777?w=600','https://images.unsplash.com/photo-1464349095431-e9a21285b5f3?w=600'],naver_url:'https://map.naver.com/p/search/디저트랩'}
+  ],
+  '가족모임':[
+    {display_name:'가족밥상',description:'넓은 좌식 공간과 유아 편의시설을 모두 갖춘 한식당. 아이 동반 가족 모임 전용 패키지도 운영한다.',menu:'갈비탕, 불고기 전골, 아이 전용 이유식',filter_match:'가족 모임 최적 편의시설',tags:['유아의자','독립공간','주차 가능','키즈 메뉴'],rating:4.3,user_ratings_total:267,price_level:3,photo_urls:['https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=600','https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=600'],naver_url:'https://map.naver.com/p/search/가족밥상'},
+    {display_name:'뷔페하우스',description:'아이부터 어른까지 입맛이 달라도 모두 만족할 수 있는 패밀리 레스토랑. 생일 케이크 서비스도 무료.',menu:'한식 뷔페, 피자, 스파게티, 아이스크림',filter_match:'다양한 취향의 가족 모임',tags:['뷔페','유아의자','주차 가능','생일 이벤트'],rating:4.1,user_ratings_total:531,price_level:3,photo_urls:['https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=600','https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=600'],naver_url:'https://map.naver.com/p/search/뷔페하우스'},
+    {display_name:'정원한정식',description:'정원이 있는 한옥 스타일 한정식 레스토랑. 어르신들을 모시는 가족 모임에 딱인 품격 있는 분위기.',menu:'한우 코스, 삼겹살 보쌈, 계절 반찬',filter_match:'어르신 동반 격식 있는 가족 모임',tags:['독립공간','주차 가능','한옥 분위기'],rating:4.6,user_ratings_total:189,price_level:4,photo_urls:['https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=600','https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600'],naver_url:'https://map.naver.com/p/search/정원한정식'}
+  ],
+  '청첩모임':[
+    {display_name:'더 스위트 룸',description:'소규모 프라이빗 파티 전용 레스토랑. 웨딩 축하 모임 전용 꽃 장식과 샴페인 서비스가 기본 포함.',menu:'코스 요리, 샴페인 플래터, 웨딩 케이크',filter_match:'청첩 축하 모임 특화',tags:['독립공간','예약 필수','꽃 장식 가능','조용한 분위기'],rating:4.8,user_ratings_total:143,price_level:4,photo_urls:['https://images.unsplash.com/photo-1519225421980-715cb0215aed?w=600','https://images.unsplash.com/photo-1464349095431-e9a21285b5f3?w=600'],naver_url:'https://map.naver.com/p/search/더 스위트 룸'},
+    {display_name:'비스트로 셀라',description:'와인 셀러를 보유한 프렌치 비스트로. 소믈리에가 결혼 축하에 맞는 샴페인을 페어링해준다.',menu:'파스타 코스, 와인 페어링, 치즈 플래터',filter_match:'격조 있는 청첩 모임',tags:['와인 전문','조용한 분위기','독립룸 가능'],rating:4.5,user_ratings_total:198,price_level:4,photo_urls:['https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=600','https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=600'],naver_url:'https://map.naver.com/p/search/비스트로 셀라'},
+    {display_name:'한옥마루',description:'전통 한옥을 개조한 레스토랑. 결혼 기념 모임에 어울리는 한복 체험과 다과 서비스가 인기.',menu:'전통 코스, 한과 다과, 전통차',filter_match:'전통 감성 청첩 모임',tags:['한옥 분위기','독립공간','포토존'],rating:4.4,user_ratings_total:176,price_level:3,photo_urls:['https://images.unsplash.com/photo-1567168544813-cc03465b4fa8?w=600','https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?w=600'],naver_url:'https://map.naver.com/p/search/한옥마루'}
+  ]
+};
+
+// 데모 중간지점 계산 (가짜 좌표 기반)
+function calcDemoMidpoint(locs){
+  const coordMap={'강남역':{lat:37.4979,lng:127.0276},'홍대입구역':{lat:37.5571,lng:126.9237},'신촌역':{lat:37.5557,lng:126.9368},'이태원역':{lat:37.5340,lng:126.9945},'합정역':{lat:37.5495,lng:126.9137},'건대입구역':{lat:37.5404,lng:127.0700},'성수역':{lat:37.5445,lng:127.0558},'잠실역':{lat:37.5133,lng:127.1001},'선릉역':{lat:37.5045,lng:127.0492},'역삼역':{lat:37.5004,lng:127.0362},'마포구청역':{lat:37.5497,lng:126.9498},'종로3가역':{lat:37.5709,lng:126.9919},'혜화역':{lat:37.5820,lng:127.0019},'을지로입구역':{lat:37.5661,lng:126.9822},'서울역':{lat:37.5547,lng:126.9706},'용산역':{lat:37.5298,lng:126.9647},'노원역':{lat:37.6547,lng:127.0566},'사당역':{lat:37.4764,lng:126.9817},'교대역':{lat:37.4929,lng:127.0137},'여의도역':{lat:37.5216,lng:126.9242}};
+  const coords=locs.map(l=>{const k=Object.keys(coordMap).find(k=>l.includes(k.replace('역','')));return k?coordMap[k]:null;}).filter(Boolean);
+  if(coords.length===0)return{area:'서울 중심',lat:37.5665,lng:126.9780};
+  if(coords.length===1)return{area:'출발지 근처',lat:coords[0].lat,lng:coords[0].lng};
+  const minLat=Math.min(...coords.map(c=>c.lat));const maxLat=Math.max(...coords.map(c=>c.lat));
+  const minLng=Math.min(...coords.map(c=>c.lng));const maxLng=Math.max(...coords.map(c=>c.lng));
+  let bestLat=0,bestLng=0,bestMax=Infinity;
+  for(let i=0;i<=20;i++)for(let j=0;j<=20;j++){
+    const lat=minLat+(maxLat-minLat)*i/20;const lng=minLng+(maxLng-minLng)*j/20;
+    const mx=Math.max(...coords.map(c=>Math.sqrt(((lat-c.lat)*111)**2+((lng-c.lng)*111*Math.cos(lat*Math.PI/180))**2)));
+    if(mx<bestMax){bestMax=mx;bestLat=lat;bestLng=lng;}
+  }
+  // 중간 지점 근처 동네 찾기
+  let nearestArea='중간지점';let nearestDist=Infinity;
+  Object.entries(coordMap).forEach(([k,v])=>{const d=Math.sqrt(((bestLat-v.lat)*111)**2+((bestLng-v.lng)*111)**2);if(d<nearestDist){nearestDist=d;nearestArea=k;}});
+  return{area:nearestArea,lat:bestLat,lng:bestLng,maxDistKm:Math.round(bestMax*10)/10};
+}
+
 // Gemini API 호출 헬퍼 — Vercel 프록시 경유
 async function callGemini(prompt){
   const r=await fetch('/api/places?action=gemini',{
@@ -640,6 +697,27 @@ async function callGemini(prompt){
 }
 
 async function getRecommend(){
+  // 데모 모드 (API 없이 미리보기)
+  if(IS_DEMO){
+    go('s-loading');
+    for(let i=0;i<5;i++){const el=document.getElementById('lstep-'+i);if(el)el.classList.remove('done','active');}
+    const steps=[0,1,2,3,4];
+    for(const step of steps){
+      advanceStep(step);
+      await new Promise(r=>setTimeout(r,600));
+    }
+    const locs=S.participants.map(p=>p.loc);
+    const mid=calcDemoMidpoint(locs);
+    const rests=(DEMO_RESTAURANTS[S.filterA]||DEMO_RESTAURANTS['가볍게식사']).map(r=>({...r}));
+    const maxDistKm=mid.maxDistKm||0;
+    S.rec={
+      area:mid.area,
+      area_reason:`참여자 ${S.participants.length}명 중 누구도 가장 멀리 가지 않도록 계산한 중간 지점이에요. 최대 이동거리 약 ${maxDistKm}km. 모임 성격(${S.filterA})에 맞는 식당들이에요.`,
+      restaurants:rests
+    };
+    setupVote();go('s-vote');
+    return;
+  }
   go('s-loading');
   for(let i=0;i<5;i++){const el=document.getElementById('lstep-'+i);if(el)el.classList.remove('done','active');}
   advanceStep(0);
@@ -663,15 +741,49 @@ async function getRecommend(){
 
   // STEP 2: 중간 좌표 계산 → 주변 식당 검색
   advanceStep(2);
-  let area='홍대', areaReason='참여자들의 중간 지점이에요.';
+  let area='서울 중심', areaReason='참여자들의 중간 지점이에요.';
   let placesResults=[];
   try{
     let centerLat, centerLng;
-    if(coords.length>0){
-      centerLat=coords.reduce((s,c)=>s+c.lat,0)/coords.length;
-      centerLng=coords.reduce((s,c)=>s+c.lng,0)/coords.length;
+    if(coords.length>=2){
+      // 지리적 중간점: 단순 평균 대신 각 참여자로부터 최대 거리 최소화하는 minimax 방식
+      // 후보 격자 생성 (출발지 범위 안에서 10x10 격자)
+      const minLat=Math.min(...coords.map(c=>c.lat));
+      const maxLat=Math.max(...coords.map(c=>c.lat));
+      const minLng=Math.min(...coords.map(c=>c.lng));
+      const maxLng=Math.max(...coords.map(c=>c.lng));
+      
+      // 범위가 너무 좁으면 (같은 동네) 그냥 평균 사용
+      const latSpan=maxLat-minLat;
+      const lngSpan=maxLng-minLng;
+      
+      if(latSpan<0.005&&lngSpan<0.005){
+        // 매우 가까운 경우 — 단순 평균
+        centerLat=coords.reduce((s,c)=>s+c.lat,0)/coords.length;
+        centerLng=coords.reduce((s,c)=>s+c.lng,0)/coords.length;
+      } else {
+        // 격자 후보 중 "최대 이동거리를 최소화"하는 지점 찾기 (minimax)
+        const steps=20;
+        let bestLat=0,bestLng=0,bestMaxDist=Infinity;
+        for(let i=0;i<=steps;i++){
+          for(let j=0;j<=steps;j++){
+            const lat=minLat+(maxLat-minLat)*i/steps;
+            const lng=minLng+(maxLng-minLng)*j/steps;
+            // 각 참여자까지 거리 (haversine 근사)
+            const dists=coords.map(c=>{
+              const dlat=(lat-c.lat)*111000;
+              const dlng=(lng-c.lng)*111000*Math.cos(lat*Math.PI/180);
+              return Math.sqrt(dlat*dlat+dlng*dlng);
+            });
+            const maxDist=Math.max(...dists);
+            if(maxDist<bestMaxDist){bestMaxDist=maxDist;bestLat=lat;bestLng=lng;}
+          }
+        }
+        centerLat=bestLat;centerLng=bestLng;
+      }
+    } else if(coords.length===1){
+      centerLat=coords[0].lat; centerLng=coords[0].lng;
     } else {
-      // fallback: 서울 중심
       centerLat=37.5665; centerLng=126.9780;
     }
 
@@ -679,15 +791,52 @@ async function getRecommend(){
     const keyword=buildSearchKeyword('');
     const r=await fetch(`/api/places?action=nearby&lat=${centerLat}&lng=${centerLng}&keyword=${encodeURIComponent(keyword)}`);
     const d=await r.json();
-    placesResults=d.results||[];
 
-    // 첫 번째 결과 주소에서 동네명 추출
+    // 없는 식당 필터링: 리뷰 10개 미만 또는 평점 없는 곳 제외
+    const rawResults=d.results||[];
+    placesResults=rawResults.filter(p=>{
+      if(!p.name)return false;
+      // 리뷰 수 10개 이상이거나, 평점이 있는 곳만
+      const hasRating=p.rating&&p.rating>0;
+      const hasEnoughReviews=p.user_ratings_total&&p.user_ratings_total>=10;
+      return hasRating&&hasEnoughReviews;
+    });
+    // 필터 후 너무 적으면 조건 완화
+    if(placesResults.length<3){
+      placesResults=rawResults.filter(p=>p.name&&p.rating&&p.rating>0);
+    }
+    if(placesResults.length<3){
+      placesResults=rawResults.filter(p=>p.name);
+    }
+
+    // 리뷰 많은 순으로 정렬 (실존 가능성 높은 순)
+    placesResults.sort((a,b)=>(b.user_ratings_total||0)-(a.user_ratings_total||0));
+
+    // 중간지점 주소에서 동네명 추출
     if(placesResults.length>0){
       const addr=placesResults[0].formatted_address||'';
       const match=addr.match(/서울[^\s]*\s([^\s]+동|[^\s]+가|[^\s]+로)/);
       area=match?match[1]:(addr.split(' ')[2]||'중간지점');
+    } else {
+      // geocode로 중간지점 주소 조회
+      try{
+        const gr=await fetch(`/api/places?action=geocode&query=${centerLat},${centerLng}`);
+        const gd=await gr.json();
+        if(gd&&gd.address){
+          const match=gd.address.match(/([^\s]+동|[^\s]+가|[^\s]+로)/);
+          if(match)area=match[1];
+        }
+      }catch(e){}
     }
-    areaReason=`참여자 ${coords.length}명의 출발지를 계산한 지리적 중간 지점이에요. 모임 성격(${S.filterA})에 맞는 식당들이 검색됐어요.`;
+
+    // 각 참여자 최대 이동거리 계산 (표시용)
+    const maxDistKm=coords.length>0?Math.round(Math.max(...coords.map(c=>{
+      const dlat=(centerLat-c.lat)*111;
+      const dlng=(centerLng-c.lng)*111*Math.cos(centerLat*Math.PI/180);
+      return Math.sqrt(dlat*dlat+dlng*dlng);
+    }))*10)/10:0;
+
+    areaReason=`참여자 ${coords.length}명 중 누구도 가장 멀리 가지 않도록 계산한 중간 지점이에요. 최대 이동거리 약 ${maxDistKm}km. 모임 성격(${S.filterA})에 맞는 식당들이에요.`;
   }catch(e){}
 
   // STEP 3: Gemini가 실제 정보 기반 선별 + 생생한 코멘트 + 특징 태그
@@ -754,7 +903,7 @@ ${placesList}
       price_level:place.price_level||null,
       address:place.formatted_address||'',
       photo_urls,
-      naver_url:`https://map.naver.com/v5/search/${encodeURIComponent(place.name)}`
+      naver_url:`https://map.naver.com/p/search/${encodeURIComponent(place.name)}`
     };
   }));
 
@@ -762,7 +911,7 @@ ${placesList}
   S.rec={
     area,
     area_reason:areaReason,
-    restaurants:valid.length>0?valid:[{display_name:'검색 결과 없음',description:'직접 네이버맵에서 검색해보세요.',menu:'',filter_match:'',tags:[],rating:null,photo_urls:[],naver_url:`https://map.naver.com/v5/search/${encodeURIComponent(S.filterA+' 서울')}`}]
+    restaurants:valid.length>0?valid:[{display_name:'검색 결과 없음',description:'직접 네이버맵에서 검색해보세요.',menu:'',filter_match:'',tags:[],rating:null,photo_urls:[],naver_url:`https://map.naver.com/p/search/${encodeURIComponent(S.filterA+' 서울')}`}]
   };
   setupVote();
   go('s-vote');
@@ -794,16 +943,19 @@ function setupVote(){
     const card=document.createElement('div');
     card.className='rest-card';card.id='vc-'+i;card.onclick=()=>castVote(i);
 
-    // 사진 2장 위아래 배치
+    // 사진 처리 - photo_urls가 있으면 사용, 없으면 카테고리별 그라디언트 플레이스홀더
     const photo1=r.photo_urls&&r.photo_urls[0];
     const photo2=r.photo_urls&&r.photo_urls[1];
+    const ph1=`<div class="rest-photo-ph rest-photo" style="display:flex;align-items:center;justify-content:center;font-size:40px;background:linear-gradient(135deg,#e8f5e9,#f1f8e9)">🏠</div>`;
+    const ph2=`<div class="rest-photo-ph2 rest-photo" style="display:flex;align-items:center;justify-content:center;font-size:40px;background:linear-gradient(135deg,#fff8e1,#fce4ec)">🍽️</div>`;
     const photoBlock=`
       <div class="rest-photos">
-        ${photo1?`<img src="${photo1}" class="rest-photo" alt="외관" onerror="this.parentElement.querySelector('.rest-photo-ph').style.display='flex';this.style.display='none'">`:''}
-        ${!photo1?`<div class="rest-photo-ph rest-photo">🏠</div>`:''}
-        <div class="rest-photo-ph" style="display:none;align-items:center;justify-content:center;font-size:28px;background:#f0f0f0;height:140px">🏠</div>
-        ${photo2?`<img src="${photo2}" class="rest-photo" alt="음식" onerror="this.parentElement.querySelector('.rest-photo-ph2').style.display='flex';this.style.display='none'">`
-          :`<div class="rest-photo-ph2 rest-photo" style="display:flex;align-items:center;justify-content:center;font-size:28px;background:#f5f0e8">🍽️</div>`}
+        ${photo1
+          ?`<img src="${photo1}" class="rest-photo" alt="외관" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">${ph1.replace('display:flex','display:none')}`
+          :ph1}
+        ${photo2
+          ?`<img src="${photo2}" class="rest-photo" alt="음식" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">${ph2.replace('display:flex','display:none')}`
+          :ph2}
       </div>`;
 
     const ratingHtml=r.rating?`<span class="rest-rating">★ ${r.rating}</span>${r.user_ratings_total?`<span style="font-size:11px;color:#bbb"> (${r.user_ratings_total.toLocaleString()})</span>`:''}`:'';
@@ -868,10 +1020,12 @@ function submitVote(){
   if(resMenu){resMenu.textContent=w.menu?'🍴 '+w.menu:'';resMenu.style.display=w.menu?'block':'none';}
 
   // 사진
-  if(w.photo_url){
-    const img=document.getElementById('res-photo');
-    img.src=w.photo_url;img.style.display='block';
-    document.getElementById('res-photo-placeholder').style.display='none';
+  const resImg=document.getElementById('res-photo');
+  const resPlaceholder=document.getElementById('res-photo-placeholder');
+  const winPhoto=w.photo_urls&&w.photo_urls[0]||w.photo_url||null;
+  if(winPhoto&&resImg&&resPlaceholder){
+    resImg.onerror=()=>{resImg.style.display='none';resPlaceholder.style.display='flex';};
+    resImg.src=winPhoto;resImg.style.display='block';resPlaceholder.style.display='none';
   }
 
   // 메타 (평점, 가격)
