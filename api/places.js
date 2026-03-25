@@ -73,6 +73,38 @@ export default async function handler(req, res) {
           return dd.result || place;
         } catch { return place; }
       }));
+
+      // ── 네이버 블로그 snippet 수집
+      const NAVER_ID = process.env.NAVER_CLIENT_ID;
+      const NAVER_SECRET = process.env.NAVER_CLIENT_SECRET;
+      const blogKw = req.query.blogKw || keyword;
+
+      if (NAVER_ID && NAVER_SECRET) {
+        await Promise.all(details.map(async place => {
+          try {
+            // 시+구 파싱: "서울특별시 마포구 ..." → "서울 마포구"
+            const addr = place.formatted_address || '';
+            const addrTokens = addr.replace('대한민국 ', '').replace('특별시', '').replace('광역시', '').split(' ');
+            const regionPrefix = addrTokens.slice(0, 2).join(' '); // "서울 마포구"
+            const q = `${regionPrefix} ${place.name} ${blogKw}`;
+            const blogUrl = `https://openapi.naver.com/v1/search/blog.json?query=${encodeURIComponent(q)}&display=5&sort=sim`;
+            const blogRes = await fetch(blogUrl, {
+              headers: {
+                'X-Naver-Client-Id': NAVER_ID,
+                'X-Naver-Client-Secret': NAVER_SECRET,
+              },
+            });
+            const blogData = await blogRes.json();
+            const items = blogData.items || [];
+            // snippet: 제목 + description 합쳐서 HTML 태그 제거
+            place.blog_snippets = items.slice(0, 5).map(item => {
+              const text = (item.title + ' ' + item.description).replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+              return text.slice(0, 200);
+            });
+          } catch { place.blog_snippets = []; }
+        }));
+      }
+
       return res.status(200).json({ results: details });
     }
 
