@@ -243,9 +243,12 @@ body {
 .rank-bar.r1 { background: var(--accent); }
 .rank-bar.r2 { background: rgba(200,240,74,.45); }
 .rank-bar.r3 { background: rgba(200,240,74,.2); }
-.photo-wrap { position: relative; height: 156px; background: var(--surface2); overflow: hidden; }
-.rest-photo { width: 100%; height: 100%; object-fit: cover; display: block; }
-.photo-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 38px; }
+.photo-wrap { position: relative; background: var(--surface2); overflow: hidden; }
+.photo-stack { display: flex; flex-direction: column; gap: 4px; padding: 4px; background: var(--surface2); }
+.photo-stack-img { width: 100%; height: 130px; object-fit: cover; border-radius: 6px; display: block; }
+.photo-stack-ph { width: 100%; height: 130px; display: flex; align-items: center; justify-content: center; font-size: 36px; background: var(--surface); border-radius: 6px; }
+.rest-photo { width: 100%; height: 156px; object-fit: cover; display: block; }
+.photo-placeholder { width: 100%; height: 156px; display: flex; align-items: center; justify-content: center; font-size: 38px; }
 .rank-badge {
   position: absolute; top: 10px; left: 10px; border-radius: 20px; padding: 4px 10px;
   font-size: 12px; font-weight: 600; backdrop-filter: blur(8px);
@@ -743,8 +746,8 @@ async function getRecommend() {
     const mid = minimax(S.pins);
 
     step(2);
-    const kw = buildKw();
-    const nr = await fetch(`/api/places?action=nearby&lat=${mid.lat}&lng=${mid.lng}&keyword=${encodeURIComponent(kw)}`);
+    const [kw, type] = buildKw();
+    const nr = await fetch(`/api/places?action=nearby&lat=${mid.lat}&lng=${mid.lng}&keyword=${encodeURIComponent(kw)}&type=${type}`);
     const nd = await nr.json();
     if (!nd.results?.length) throw new Error('주변에 식당을 찾지 못했어요. 출발지를 다시 설정해보세요.');
 
@@ -773,25 +776,43 @@ async function getRecommend() {
 function buildKw() {
   const c = S.condition;
   const map = {
-    '술자리': c.main?.includes('와인') ? '와인바' : c.main?.includes('사케') ? '이자카야' : c.main?.includes('막걸리') ? '막걸리집' : c.main?.includes('맥주') ? '호프집' : '소주 한식 술집',
-    '회식': c.main?.includes('중식') ? '중식당' : c.main?.includes('일식') ? '일식당' : c.main?.includes('양식') ? '레스토랑' : '한식 고기집',
-    '가족': '가족식당 단체',
-    '식사': c.main === '상관없음' || !c.main ? '맛집' : c.main + ' 맛집',
-    '카페': c.main?.includes('빵') ? '베이커리 카페' : c.main?.includes('디저트') ? '디저트 카페' : '카페',
-    '청첩': c.main?.includes('맛집') ? '맛집 레스토랑' : c.main?.includes('분위기') ? '분위기 좋은 레스토랑' : '조용한 카페 레스토랑',
+    '술자리': c.main?.includes('와인') ? ['wine bar 와인바', 'bar'] :
+              c.main?.includes('사케') ? ['izakaya 이자카야 일식', 'restaurant'] :
+              c.main?.includes('막걸리') ? ['막걸리 전통주점 Korean traditional', 'restaurant'] :
+              c.main?.includes('맥주') ? ['호프 beer pub 맥주', 'bar'] :
+              ['소주 한식 술집 Korean pub', 'restaurant'],
+    '회식': c.main?.includes('중식') ? ['중식당 Chinese restaurant', 'restaurant'] :
+            c.main?.includes('일식') ? ['일식당 Japanese restaurant', 'restaurant'] :
+            c.main?.includes('양식') ? ['양식 Italian restaurant', 'restaurant'] :
+            ['한식 고기 Korean BBQ grill', 'restaurant'],
+    '가족': ['가족식당 family restaurant 단체', 'restaurant'],
+    '식사': c.main === '상관없음' || !c.main ? ['맛집 restaurant', 'restaurant'] :
+            c.main === '한식' ? ['한식 Korean food', 'restaurant'] :
+            c.main === '중식' ? ['중식 Chinese food', 'restaurant'] :
+            c.main === '일식' ? ['일식 Japanese food', 'restaurant'] :
+            c.main === '양식' ? ['양식 Western restaurant', 'restaurant'] :
+            c.main === '동남아' ? ['동남아 Thai Vietnamese restaurant', 'restaurant'] :
+            [c.main + ' 맛집', 'restaurant'],
+    '카페': c.main?.includes('빵') ? ['베이커리 bakery cafe 빵', 'bakery'] :
+            c.main?.includes('디저트') ? ['디저트 dessert cafe', 'cafe'] :
+            ['카페 coffee cafe', 'cafe'],
+    '청첩': c.main?.includes('맛집') ? ['맛집 fine dining restaurant', 'restaurant'] :
+            c.main?.includes('분위기') ? ['분위기 좋은 romantic restaurant', 'restaurant'] :
+            ['조용한 quiet restaurant', 'restaurant'],
   };
-  return map[S.type] || '맛집';
+  return map[S.type] || ['맛집 restaurant', 'restaurant'];
 }
 
 async function runGemini(restaurants) {
   const list = restaurants.map((r,i) => `${i+1}. ${r.name} (평점:${r.rating||'없음'}, 리뷰:${r.user_ratings_total||0}개, 주소:${r.formatted_address||''})`).join('\n');
   const cstr = S.condition.main || S.condition.selected?.join(', ') || '상관없음';
-  const prompt = `한국 맛집 큐레이터입니다. 아래 식당들을 "${S.type}" 모임 (조건: ${cstr})에 맞게 TOP 3 선정하고 JSON 배열만 반환하세요. 마크다운/코드블록 절대 금지.
+  const prompt = `당신은 한국 맛집 큐레이터입니다. 아래 식당 목록에서 "${S.type}" 모임 (조건: ${cstr})에 가장 잘 맞는 TOP 3를 선정하세요.
 
 식당 목록:
 ${list}
 
-반환 형식: [{"rank":1,"name":"식당명","description":"추천이유 2문장","tags":["태그1","태그2","태그3"]},{"rank":2,...},{"rank":3,...}]`;
+반드시 아래 JSON 배열 형식으로만 응답하세요. 다른 텍스트, 마크다운, 코드블록 없이 JSON만:
+[{"rank":1,"name":"식당명","description":"이 모임에 어울리는 이유 2문장으로 구체적으로","tags":["분위기태그","음식태그","특징태그"]},{"rank":2,"name":"식당명","description":"설명","tags":["태그1","태그2","태그3"]},{"rank":3,"name":"식당명","description":"설명","tags":["태그1","태그2","태그3"]}]`;
 
   try {
     const res = await fetch('/api/places?action=gemini', {
@@ -799,44 +820,60 @@ ${list}
       body: JSON.stringify({ prompt }),
     });
     const d = await res.json();
-    const text = d.text || '';
+    const text = (d.text || '').trim();
+    console.log('Gemini raw:', text);
+
     let parsed = null;
+    // 1차: 그대로
     try { parsed = JSON.parse(text); } catch {}
-    if (!parsed) { const m = text.match(/\[[\s\S]*\]/); if (m) try { parsed = JSON.parse(m[0]); } catch {} }
-    if (!parsed) { try { parsed = JSON.parse(text.replace(/```json|```/g,'').trim()); } catch {} }
+    // 2차: [] 블록 추출
+    if (!Array.isArray(parsed)) {
+      const m = text.match(/\[[\s\S]*?\]/);
+      if (m) try { parsed = JSON.parse(m[0]); } catch {}
+    }
+    // 3차: 코드블록 제거
+    if (!Array.isArray(parsed)) {
+      const clean = text.replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,'').trim();
+      try { parsed = JSON.parse(clean); } catch {}
+    }
 
     if (Array.isArray(parsed) && parsed.length) {
       return parsed.map(item => {
-        const orig = restaurants.find(r => r.name && item.name && r.name.includes(item.name.slice(0,4)))
+        const orig = restaurants.find(r => r.name && item.name && (r.name.includes(item.name.slice(0,4)) || item.name.includes(r.name.slice(0,4))))
                      || restaurants[(item.rank||1)-1] || restaurants[0];
-        return {
-          ...orig,
-          display_name: item.name || orig.name,
-          description: item.description || '',
-          tags: item.tags || [],
-          rank: item.rank,
-          naver_url: `https://map.naver.com/p/search/${encodeURIComponent(orig?.formatted_address || item.name)}`,
-        };
+        return { ...orig, display_name: item.name || orig.name, description: item.description || '', tags: item.tags || [], rank: item.rank };
       });
     }
-  } catch(e) { console.error('Gemini:', e); }
+    console.warn('Gemini 파싱 실패, fallback 사용');
+  } catch(e) { console.error('Gemini error:', e); }
 
   return restaurants.slice(0,3).map((r,i) => ({
-    ...r, display_name: r.name, description: r.formatted_address||'', tags: [], rank: i+1,
-    naver_url: `https://map.naver.com/p/search/${encodeURIComponent(r.formatted_address||r.name)}`,
+    ...r, display_name: r.name, description: '', tags: [], rank: i+1,
   }));
 }
 
 async function loadPhotos(rests) {
   return Promise.all(rests.map(async r => {
-    const ref = r.photos?.[0]?.photo_reference;
-    if (!ref) return { ...r, photo_url: null };
+    const refs = (r.photos || []).slice(0, 2).map(p => p.photo_reference).filter(Boolean);
+    if (!refs.length) return { ...r, photo_urls: [] };
     try {
-      const res = await fetch(`/api/places?action=photo&photo_references=${ref}&maxwidth=600`);
+      const res = await fetch(`/api/places?action=photo&photo_references=${refs.join(',')}&maxwidth=600`);
       const d = await res.json();
-      return { ...r, photo_url: d.photo_urls?.[0] || null };
-    } catch { return { ...r, photo_url: null }; }
+      return { ...r, photo_urls: d.photo_urls || [] };
+    } catch { return { ...r, photo_urls: [] }; }
   }));
+}
+
+// 네이버맵 URL 생성 — 구/동/가/로/길 + 번지 + 식당명
+function buildNaverUrl(r) {
+  const addr = r.formatted_address || '';
+  // "대한민국 서울특별시 " 등 앞부분 제거
+  const cleaned = addr.replace(/^대한민국\s*/, '').replace(/^(서울특별시|경기도|부산광역시|인천광역시|대구광역시|대전광역시|광주광역시|울산광역시|세종특별자치시)\s*/, '');
+  // 구 이하 주소 추출 (구/군 부터)
+  const match = cleaned.match(/([가-힣]+[구군]\s*.+)/);
+  const shortAddr = match ? match[1] : cleaned;
+  const name = r.display_name || r.name || '';
+  return `https://map.naver.com/p/search/${encodeURIComponent(shortAddr + ' ' + name)}`;
 }
 
 // ── RENDER RESULT
@@ -860,27 +897,48 @@ function renderResult(rests, mid) {
 
   rests.slice(0,3).forEach((r,i) => {
     const card = document.createElement('div'); card.className = 'rest-card';
-    const photoHtml = r.photo_url
-      ? `<img class="rest-photo" src="${r.photo_url}" alt="${r.display_name||r.name}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
-      : '';
-    const placeholder = `<div class="photo-placeholder" style="${r.photo_url?'display:none':''}">🍽️</div>`;
+
+    // 사진 2장 상하 배열
+    const urls = r.photo_urls || [];
+    let photoHtml = '';
+    if (urls.length >= 2) {
+      photoHtml = `
+        <div class="rank-badge ${RC[i]}" style="position:absolute;top:10px;left:10px;z-index:2">${RANK_LBL[i]}</div>
+        <div class="photo-stack">
+          <img class="photo-stack-img" src="${urls[0]}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <div class="photo-stack-ph" style="display:none">🏠</div>
+          <img class="photo-stack-img" src="${urls[1]}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <div class="photo-stack-ph" style="display:none">🍽️</div>
+        </div>`;
+    } else if (urls.length === 1) {
+      photoHtml = `
+        <div class="rank-badge ${RC[i]}" style="position:absolute;top:10px;left:10px;z-index:2">${RANK_LBL[i]}</div>
+        <img class="rest-photo" src="${urls[0]}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+        <div class="photo-placeholder" style="display:none">🍽️</div>`;
+    } else {
+      photoHtml = `
+        <div class="rank-badge ${RC[i]}" style="position:absolute;top:10px;left:10px;z-index:2">${RANK_LBL[i]}</div>
+        <div class="photo-placeholder">🍽️</div>`;
+    }
+
     const meta = [
       r.rating ? `<span class="rest-rating">★ ${r.rating}</span><span class="rest-reviews">(${(r.user_ratings_total||0).toLocaleString()})</span>` : '',
       r.price_level ? `<span class="rest-price">${'₩'.repeat(r.price_level)}</span>` : '',
     ].filter(Boolean).join('');
 
+    const naverUrl = buildNaverUrl(r);
+
     card.innerHTML = `
       <div class="rank-bar ${RC[i]}"></div>
-      <div class="photo-wrap">
-        ${photoHtml}${placeholder}
-        <span class="rank-badge ${RC[i]}">${RANK_LBL[i]}</span>
+      <div class="photo-wrap" style="position:relative">
+        ${photoHtml}
       </div>
       <div class="rest-body">
         <p class="rest-name">${r.display_name||r.name}</p>
-        <p class="rest-desc">${r.description||r.formatted_address||''}</p>
+        <p class="rest-desc">${r.description||''}</p>
         ${meta ? `<div class="rest-meta">${meta}</div>` : ''}
         ${(r.tags||[]).length ? `<div class="rest-tags">${r.tags.map(t=>`<span class="rest-tag">${t}</span>`).join('')}</div>` : ''}
-        <a href="${r.naver_url}" target="_blank" class="btn-naver">🗺 네이버맵으로 보기</a>
+        <a href="${naverUrl}" target="_blank" class="btn-naver">🗺 네이버맵으로 보기</a>
       </div>`;
     container.appendChild(card);
   });
