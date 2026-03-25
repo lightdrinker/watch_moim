@@ -740,6 +740,22 @@ function haversine(la1, ln1, la2, ln2) {
   return R*2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
+// ── 중간지점 구/동 이름 추출 (Promise wrapping)
+function getMidDistrict(lat, lng) {
+  return new Promise(resolve => {
+    if (!geocoder) { resolve(''); return; }
+    geocoder.geocode({ location: { lat, lng }, language: 'ko' }, (res, st) => {
+      if (st === 'OK' && res[0]) {
+        const comps = res[0].address_components;
+        // 구 우선, 없으면 동
+        const gu  = comps.find(c => c.types.includes('sublocality_level_1'));
+        const dong = comps.find(c => c.types.includes('sublocality_level_2'));
+        resolve(gu?.long_name || dong?.long_name || '');
+      } else resolve('');
+    });
+  });
+}
+
 // ── RECOMMEND FLOW
 async function getRecommend() {
   go('s-loading'); step(0);
@@ -749,15 +765,16 @@ async function getRecommend() {
 
     step(2);
     const [kw, type, blogKw] = buildKw();
-    const nr = await fetch(`/api/places?action=nearby&lat=${mid.lat}&lng=${mid.lng}&keyword=${encodeURIComponent(kw)}&type=${type}&blogKw=${encodeURIComponent(blogKw)}`);
+    // 중간지점 구 이름 추출 후 API에 전달
+    const district = await getMidDistrict(mid.lat, mid.lng);
+    const nr = await fetch(`/api/places?action=nearby&lat=${mid.lat}&lng=${mid.lng}&keyword=${encodeURIComponent(kw)}&type=${type}&blogKw=${encodeURIComponent(blogKw)}&district=${encodeURIComponent(district)}`);
     const nd = await nr.json();
     if (!nd.results?.length) throw new Error('주변에 식당을 찾지 못했어요. 출발지를 다시 설정해보세요.');
 
-    let filtered = nd.results.filter(r => r.user_ratings_total >= 10 && r.rating);
-    if (filtered.length < 3) filtered = nd.results.filter(r => r.rating);
-    if (filtered.length < 3) filtered = nd.results;
-    filtered.sort((a, b) => (b.user_ratings_total||0) - (a.user_ratings_total||0));
-    const top = filtered.slice(0, 5);
+    // 정렬: 리뷰 많은 순 (네이버/Google 혼합 결과 공통 필드)
+    const results = nd.results;
+    results.sort((a, b) => (b.user_ratings_total||0) - (a.user_ratings_total||0));
+    const top = results.slice(0, 5);
 
     step(3);
     const enriched = await runGemini(top);
