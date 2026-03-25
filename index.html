@@ -228,7 +228,8 @@ body {
 #s-result { background: var(--bg); }
 .res-header { padding: 28px 20px 16px; }
 .res-header .rh-eyebrow { font-size: 11px; color: var(--text3); margin-bottom: 6px; letter-spacing: .8px; text-transform: uppercase; }
-.res-header .rh-title { font-size: 22px; font-weight: 600; margin-bottom: 10px; }
+.res-header .rh-title { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+.rh-subtitle { font-size: 13px; color: var(--text2); margin: 0 0 10px; }
 .rh-badge {
   display: inline-flex; align-items: center; gap: 6px;
   background: var(--accent-dim); border: 1px solid rgba(200,240,74,.25);
@@ -433,8 +434,9 @@ body {
 <div class="screen" id="s-result">
   <div class="res-header">
     <p class="rh-eyebrow">추천 완료</p>
-    <h2 class="rh-title" id="res-title">이 동네 어때요?</h2>
     <span class="rh-badge" id="res-area">📍 —</span>
+    <h2 class="rh-title" id="res-title">이 동네 어때요?</h2>
+    <p class="rh-subtitle" id="res-subtitle"></p>
   </div>
   <div id="rest-cards"></div>
   <div class="res-bottom">
@@ -826,17 +828,16 @@ ${list}
     });
     const d = await res.json();
     const text = (d.text || '').trim();
-    console.log('Gemini raw:', text);
 
     let parsed = null;
-    // 1차: 그대로
+    // 1차: 직접 파싱
     try { parsed = JSON.parse(text); } catch {}
     // 2차: [] 블록 추출
     if (!Array.isArray(parsed)) {
-      const m = text.match(/\[[\s\S]*?\]/);
+      const m = text.match(/\[[\s\S]*\]/);
       if (m) try { parsed = JSON.parse(m[0]); } catch {}
     }
-    // 3차: 코드블록 제거
+    // 3차: 코드블록 제거 후 파싱
     if (!Array.isArray(parsed)) {
       const clean = text.replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,'').trim();
       try { parsed = JSON.parse(clean); } catch {}
@@ -844,13 +845,16 @@ ${list}
 
     if (Array.isArray(parsed) && parsed.length) {
       return parsed.map(item => {
-        const orig = restaurants.find(r => r.name && item.name && (r.name.includes(item.name.slice(0,4)) || item.name.includes(r.name.slice(0,4))))
-                     || restaurants[(item.rank||1)-1] || restaurants[0];
+        // 식당명 정확 매칭 우선, 부분 매칭 보조
+        const orig = restaurants.find(r => r.name === item.name)
+          || restaurants.find(r => r.name && item.name && r.name.includes(item.name))
+          || restaurants.find(r => r.name && item.name && item.name.includes(r.name))
+          || restaurants[(item.rank || 1) - 1]
+          || restaurants[0];
         return { ...orig, display_name: item.name || orig.name, description: item.description || '', tags: item.tags || [], rank: item.rank };
       });
     }
-    console.warn('Gemini 파싱 실패, fallback 사용');
-  } catch(e) { console.error('Gemini error:', e); }
+  } catch(e) { /* Gemini 호출 실패 시 fallback */ }
 
   return restaurants.slice(0,3).map((r,i) => ({
     ...r, display_name: r.name, description: '', tags: [], rank: i+1,
@@ -883,18 +887,42 @@ function buildNaverUrl(r) {
 
 // ── RENDER RESULT
 function renderResult(rests, mid) {
-  document.getElementById('res-title').textContent = `${S.typeIcon} ${S.type} 추천`;
+  // 모임 조건 텍스트
+  const condStr = S.condition.main || (S.condition.selected || []).join('·') || '';
+  const titleText = condStr ? `${S.typeIcon} ${condStr} ${S.type}` : `${S.typeIcon} ${S.type}`;
+  document.getElementById('res-title').textContent = titleText;
+
+  // 출발지 동네명 조합 (pin label에서 역/동 이름 추출)
+  const pinNames = (S.pins || []).map(p => {
+    const lbl = p.label || '';
+    // "XX역" 또는 "XX동" 앞부분만 추출
+    const m = lbl.match(/([가-힣]+(?:역|동|읍|면|리))/);
+    return m ? m[1] : lbl.split(' ')[0];
+  }).filter(Boolean);
+  const pinSummary = pinNames.length ? pinNames.join('·') + ' 중간' : '';
 
   if (geocoder) {
     geocoder.geocode({ location: { lat: mid.lat, lng: mid.lng }, language: 'ko' }, (res, st) => {
+      let areaName = '';
       if (st === 'OK' && res[0]) {
         const comps = res[0].address_components;
         const sub = comps.find(c => c.types.includes('sublocality_level_2') || c.types.includes('sublocality_level_1'));
-        const name = sub?.long_name || '';
-        if (name) document.getElementById('res-area').textContent = `📍 ${name} 근처`;
+        areaName = sub?.long_name || '';
       }
+      const badge = areaName
+        ? `📍 ${pinSummary ? pinSummary + ', ' : ''}${areaName} 근처`
+        : pinSummary ? `📍 ${pinSummary}` : '📍 —';
+      document.getElementById('res-area').textContent = badge;
     });
+  } else if (pinSummary) {
+    document.getElementById('res-area').textContent = `📍 ${pinSummary}`;
   }
+
+  // 서브타이틀: "XX동·XX동 중간 지점, XX 맛집 TOP 3입니다"
+  const condLabel = S.condition.main || (S.condition.selected || []).join('·') || S.type;
+  document.getElementById('res-subtitle') && (
+    document.getElementById('res-subtitle').textContent = `${condLabel} 맛집 TOP 3`
+  );
 
   const container = document.getElementById('rest-cards'); container.innerHTML = '';
   const RANK_LBL = ['🥇 1위', '🥈 2위', '🥉 3위'];
