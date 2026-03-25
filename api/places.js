@@ -40,15 +40,31 @@ export default async function handler(req, res) {
   if (!GKEY) return res.status(500).json({ error: 'Google API key not configured' });
 
   try {
-    // ── 주변 식당 검색 (중간지점 기준)
+    // ── 주변 식당 검색 (중간지점 기준 Nearby Search)
     if (action === 'nearby') {
-      const { lat, lng, keyword } = req.query;
-      const url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(keyword)}&location=${lat},${lng}&radius=1000&language=ko&region=kr&key=${GKEY}`;
-      const r = await fetch(url);
-      const d = await r.json();
-      if (!d.results?.length) return res.status(200).json({ results: [] });
+      const { lat, lng, keyword, type = 'restaurant' } = req.query;
 
-      const top = d.results.slice(0, 10);
+      // 1차: Nearby Search (위치 정확, type 필터)
+      const nearbyUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=1000&type=${type}&keyword=${encodeURIComponent(keyword)}&language=ko&region=kr&key=${GKEY}`;
+      const nearbyRes = await fetch(nearbyUrl);
+      const nearbyData = await nearbyRes.json();
+
+      let results = nearbyData.results || [];
+
+      // 결과 부족하면 2차: Text Search로 보완
+      if (results.length < 5) {
+        const textUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(keyword)}&location=${lat},${lng}&radius=1000&language=ko&region=kr&key=${GKEY}`;
+        const textRes = await fetch(textUrl);
+        const textData = await textRes.json();
+        const textResults = textData.results || [];
+        // 중복 제거 후 합치기
+        const existingIds = new Set(results.map(r => r.place_id));
+        textResults.forEach(r => { if (!existingIds.has(r.place_id)) results.push(r); });
+      }
+
+      if (!results.length) return res.status(200).json({ results: [] });
+
+      const top = results.slice(0, 10);
       const fields = 'name,rating,user_ratings_total,formatted_address,photos,price_level,opening_hours,place_id,types';
       const details = await Promise.all(top.map(async place => {
         try {
