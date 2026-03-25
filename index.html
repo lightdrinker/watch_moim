@@ -909,13 +909,17 @@ function renderResult(rests, mid) {
         const sub = comps.find(c => c.types.includes('sublocality_level_2') || c.types.includes('sublocality_level_1'));
         areaName = sub?.long_name || '';
       }
-      const badge = areaName
-        ? `📍 ${pinSummary ? pinSummary + ', ' : ''}${areaName} 근처`
-        : pinSummary ? `📍 ${pinSummary}` : '📍 —';
+      // "A & B & C ▶ 중간 위치는 D 입니다." 형태
+      const pinPart = pinNames.join(' & ');
+      const midPart = areaName ? `중간 위치는 ${areaName} 입니다` : '';
+      const badge = pinPart && midPart
+        ? `📍 ${pinPart}  ▶  ${midPart}`
+        : pinPart ? `📍 ${pinPart} 중간` : areaName ? `📍 ${areaName} 근처` : '📍 —';
       document.getElementById('res-area').textContent = badge;
     });
-  } else if (pinSummary) {
-    document.getElementById('res-area').textContent = `📍 ${pinSummary}`;
+  } else {
+    const pinPart = pinNames.join(' & ');
+    document.getElementById('res-area').textContent = pinPart ? `📍 ${pinPart} 중간` : '📍 —';
   }
 
   // 서브타이틀: "XX동·XX동 중간 지점, XX 맛집 TOP 3입니다"

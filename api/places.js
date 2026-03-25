@@ -71,6 +71,22 @@ export default async function handler(req, res) {
         textResults.forEach(r => { if (!existingIds.has(r.place_id)) results.push(r); });
       }
 
+      // 중간지점 기준 2km 초과 결과 제거 (Text Search의 느슨한 반경 보정)
+      const toRad = d => d * Math.PI / 180;
+      const distKm = (la1, ln1, la2, ln2) => {
+        const R = 6371, dLa = toRad(la2-la1), dLn = toRad(ln2-ln1);
+        const a = Math.sin(dLa/2)**2 + Math.cos(toRad(la1))*Math.cos(toRad(la2))*Math.sin(dLn/2)**2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      };
+      const midLat = parseFloat(lat), midLng = parseFloat(lng);
+      const filtered = results.filter(r => {
+        const rl = r.geometry?.location;
+        if (!rl) return true; // 좌표 없으면 일단 통과
+        return distKm(midLat, midLng, rl.lat, rl.lng) <= 2.0;
+      });
+      // 필터 후 3개 미만이면 원본 유지 (결과 없는 상황 방지)
+      results = filtered.length >= 3 ? filtered : results;
+
       if (!results.length) return res.status(200).json({ results: [] });
 
       // 상위 10개 상세 조회
