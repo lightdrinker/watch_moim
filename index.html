@@ -828,13 +828,19 @@ async function runGemini(restaurants) {
     return `${i+1}. ${r.name} (평점:${r.rating||'없음'}, 리뷰:${r.user_ratings_total||0}개, 주소:${r.formatted_address||''}${blogInfo})`;
   }).join('\n');
   const cstr = S.condition.main || S.condition.selected?.join(', ') || '상관없음';
-  const prompt = `당신은 한국 맛집 큐레이터입니다. 아래 식당 목록에서 "${S.type}" 모임 (조건: ${cstr})에 가장 잘 맞는 TOP 3를 선정하세요. 블로그 후기는 판단 참고용으로만 사용하세요.
+  const prompt = `당신은 한국 맛집 큐레이터입니다.
+
+[지시사항]
+- 아래 식당 목록에서 "${S.type}" 모임 (조건: ${cstr})에 가장 잘 맞는 TOP 3를 선정하세요.
+- 각 식당의 description은 그 식당의 대표 음식과 분위기를 포함한 자연스러운 추천 문장 1-2개로 작성하세요.
+- 블로그 후기 문장을 그대로 복사하거나 인용하지 마세요. 반드시 새로 작성하세요.
+- tags는 분위기/음식/특징을 나타내는 짧은 한국어 태그로 작성하세요.
 
 식당 목록:
 ${list}
 
-반드시 아래 JSON 배열 형식으로만 응답하세요. 다른 텍스트, 마크다운, 코드블록 없이 JSON만:
-[{"rank":1,"name":"식당명","description":"블로그 내용 직접 인용 금지. 이 식당의 음식과 분위기를 자연스럽게 1-2문장으로 요약. 음식 설명 반드시 포함.","tags":["분위기태그","음식태그","특징태그"]},{"rank":2,"name":"식당명","description":"블로그 내용 직접 인용 금지. 이 식당의 음식과 분위기를 자연스럽게 1-2문장으로 요약. 음식 설명 반드시 포함.","tags":["태그1","태그2","태그3"]},{"rank":3,"name":"식당명","description":"블로그 내용 직접 인용 금지. 이 식당의 음식과 분위기를 자연스럽게 1-2문장으로 요약. 음식 설명 반드시 포함.","tags":["태그1","태그2","태그3"]}]`;
+반드시 아래 JSON 배열 형식으로만 응답하세요. 다른 텍스트 없이 JSON만:
+[{"rank":1,"name":"식당명","description":"이 식당 추천 이유 1-2문장","tags":["태그1","태그2","태그3"]},{"rank":2,"name":"식당명","description":"이 식당 추천 이유 1-2문장","tags":["태그1","태그2","태그3"]},{"rank":3,"name":"식당명","description":"이 식당 추천 이유 1-2문장","tags":["태그1","태그2","태그3"]}]`;
 
   try {
     const res = await fetch('/api/places?action=gemini', {

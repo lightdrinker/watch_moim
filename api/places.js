@@ -116,8 +116,13 @@ export default async function handler(req, res) {
         const placeAddr = item.roadAddress || item.address || '';
 
         try {
-          // 식당명 + 도로명주소로 Text Search → 정확한 식당 매칭
-          const q = placeAddr ? `${placeName} ${placeAddr}` : placeName;
+          // 식당명 + 구/동 이름만으로 Text Search (상세주소 제외 → Google 매칭률 향상)
+          const addrShort = (() => {
+            const guM = placeAddr.match(/([가-힣]+[구군])/);
+            const dongM = placeAddr.match(/[가-힣]+[구군]\s*([가-힣0-9]+(?:동|가|읍|면|리))\b/);
+            return [guM?.[1], dongM?.[1]].filter(Boolean).join(' ');
+          })();
+          const q = addrShort ? `${placeName} ${addrShort}` : placeName;
           const tsUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(q)}&language=ko&key=${GKEY}`;
           const tsRes = await fetch(tsUrl);
           const tsData = await tsRes.json();
