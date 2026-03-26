@@ -95,10 +95,12 @@ export default async function handler(req, res) {
           // 거리 필터: 2km → 3.5km → 5km 단계적 확장
           // 절대 우회 없음 — 5km에도 3개 미만이면 있는 것만 반환
           let nearby = [];
+          let radiusUsed = 2.0;
           for (const radius of [2.0, 3.5, 5.0]) {
             nearby = withCoords.filter(item =>
               distKm(midLat, midLng, item._lat, item._lng) <= radius
             );
+            radiusUsed = radius;
             if (nearby.length >= 3) break;
           }
           finalResults = nearby; // 거리 필터 결과만 사용, 절대 우회 없음
@@ -114,17 +116,19 @@ export default async function handler(req, res) {
         const placeAddr = item.roadAddress || item.address || '';
 
         try {
-          // 네이버 좌표 기준 50m Nearby Search → 같은 건물 정확 매칭
-          const nsUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${item._lat},${item._lng}&radius=50&language=ko&key=${GKEY}`;
-          const nsRes = await fetch(nsUrl);
-          const nsData = await nsRes.json();
-          const candidates = nsData.results || [];
-
-          // 식당명이 일치하는 결과 우선, 없으면 첫 번째 결과
+          // 네이버 좌표 기준 Nearby Search — 50m → 100m → 200m 단계적 확장
           const cleanName = placeName.replace(/\s/g, '').toLowerCase();
-          const gResult = candidates.find(c =>
-            c.name && c.name.replace(/\s/g, '').toLowerCase().includes(cleanName.slice(0, 3))
-          ) || candidates[0];
+          let gResult = null;
+          for (const nsRadius of [50, 100, 200]) {
+            const nsUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${item._lat},${item._lng}&radius=${nsRadius}&language=ko&key=${GKEY}`;
+            const nsRes = await fetch(nsUrl);
+            const nsData = await nsRes.json();
+            const candidates = nsData.results || [];
+            gResult = candidates.find(c =>
+              c.name && c.name.replace(/\s/g, '').toLowerCase().includes(cleanName.slice(0, 3))
+            ) || candidates[0] || null;
+            if (gResult) break;
+          }
 
           if (gResult?.place_id) {
             const dr = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?place_id=${gResult.place_id}&fields=${fields}&language=ko&key=${GKEY}`);
@@ -199,7 +203,7 @@ export default async function handler(req, res) {
         }));
       }
 
-      return res.status(200).json({ results: enriched });
+      return res.status(200).json({ results: enriched, radiusUsed });
     }
 
     // ── 사진 URL 반환

@@ -771,10 +771,8 @@ async function getRecommend() {
     const nd = await nr.json();
     if (!nd.results?.length) throw new Error('주변에 식당을 찾지 못했어요. 출발지를 다시 설정해보세요.');
 
-    // 정렬: 리뷰 많은 순 (네이버/Google 혼합 결과 공통 필드)
-    const results = nd.results;
-    results.sort((a, b) => (b.user_ratings_total||0) - (a.user_ratings_total||0));
-    const top = results.slice(0, 5);
+    // 네이버 검색 결과 순서 유지 (이미 관련도순 정렬됨)
+    const top = nd.results.slice(0, 5);
 
     step(3);
     const enriched = await runGemini(top);
@@ -783,7 +781,7 @@ async function getRecommend() {
     const withPhotos = await loadPhotos(enriched);
 
     S.rec = { restaurants: withPhotos, mid };
-    renderResult(withPhotos, mid);
+    renderResult(withPhotos, mid, nd.radiusUsed || 2.0);
     go('s-result');
   } catch(e) {
     document.getElementById('loc-error').textContent = e.message || '오류가 발생했어요. 다시 시도해주세요.';
@@ -873,9 +871,20 @@ ${list}
     }
   } catch(e) { /* Gemini 호출 실패 시 fallback */ }
 
-  return restaurants.slice(0,3).map((r,i) => ({
-    ...r, display_name: r.name, description: '', tags: [], rank: i+1,
-  }));
+  // Gemini 실패 시 fallback — blog_snippets에서 description, types에서 tags 생성
+  const typeMap = {
+    restaurant: '음식점', bar: '바', cafe: '카페', bakery: '베이커리',
+    meal_takeaway: '포장가능', meal_delivery: '배달', night_club: '나이트클럽',
+    liquor_store: '주류', food: '식당',
+  };
+  return restaurants.slice(0,3).map((r,i) => {
+    const desc = (r.blog_snippets || []).find(s => s && s.trim()) || '';
+    const rawTags = (r.types || [])
+      .filter(t => !['point_of_interest','establishment','food','premise'].includes(t))
+      .slice(0, 3)
+      .map(t => typeMap[t] || t.replace(/_/g, ' '));
+    return { ...r, display_name: r.name, description: desc.slice(0, 100), tags: rawTags, rank: i+1 };
+  });
 }
 
 async function loadPhotos(rests) {
@@ -890,20 +899,26 @@ async function loadPhotos(rests) {
   }));
 }
 
-// 네이버맵 URL 생성 — 구/동/가/로/길 + 번지 + 식당명
+// 네이버맵 URL 생성 — 구+동 이름만 추출 + 식당명 (층수 등 제외)
 function buildNaverUrl(r) {
   const addr = r.formatted_address || '';
-  // "대한민국 서울특별시 " 등 앞부분 제거
-  const cleaned = addr.replace(/^대한민국\s*/, '').replace(/^(서울특별시|경기도|부산광역시|인천광역시|대구광역시|대전광역시|광주광역시|울산광역시|세종특별자치시)\s*/, '');
-  // 구 이하 주소 추출 (구/군 부터)
-  const match = cleaned.match(/([가-힣]+[구군]\s*.+)/);
-  const shortAddr = match ? match[1] : cleaned;
+  // 시도 앞부분 제거
+  const cleaned = addr
+    .replace(/^대한민국\s*/, '')
+    .replace(/^(서울특별시|경기도|부산광역시|인천광역시|대구광역시|대전광역시|광주광역시|울산광역시|세종특별자치시)\s*/, '');
+  // 구(군) 추출
+  const guMatch = cleaned.match(/([가-힣]+[구군])/);
+  const gu = guMatch ? guMatch[1] : '';
+  // 동/가/읍/면/리 추출 (구 뒤에 오는 것만, 로/길 이전까지)
+  const dongMatch = cleaned.match(/[가-힣]+[구군]\s*([가-힣0-9]+(?:동|가|읍|면|리))\b/);
+  const dong = dongMatch ? dongMatch[1] : '';
+  const shortAddr = [gu, dong].filter(Boolean).join(' ');
   const name = r.display_name || r.name || '';
-  return `https://map.naver.com/p/search/${encodeURIComponent(shortAddr + ' ' + name)}`;
+  return `https://map.naver.com/p/search/${encodeURIComponent([shortAddr, name].filter(Boolean).join(' '))}`;
 }
 
 // ── RENDER RESULT
-function renderResult(rests, mid) {
+function renderResult(rests, mid, radiusUsed) {
   // 모임 조건 텍스트
   const condStr = S.condition.main || (S.condition.selected || []).join('·') || '';
   const titleText = condStr ? `${S.typeIcon} ${condStr} ${S.type}` : `${S.typeIcon} ${S.type}`;
@@ -939,10 +954,11 @@ function renderResult(rests, mid) {
     document.getElementById('res-area').textContent = pinPart ? `📍 ${pinPart} 중간` : '📍 —';
   }
 
-  // 서브타이틀: "XX동·XX동 중간 지점, XX 맛집 TOP 3입니다"
+  // 서브타이틀: "Xkm 이내의 XX 추천"
   const condLabel = S.condition.main || (S.condition.selected || []).join('·') || S.type;
+  const radiusLabel = radiusUsed % 1 === 0 ? `${radiusUsed}` : `${radiusUsed}`;
   document.getElementById('res-subtitle') && (
-    document.getElementById('res-subtitle').textContent = `${condLabel} 맛집 TOP 3`
+    document.getElementById('res-subtitle').textContent = `${radiusLabel}km 이내의 ${condLabel} 추천`
   );
 
   const container = document.getElementById('rest-cards'); container.innerHTML = '';
