@@ -68,6 +68,7 @@ export default async function handler(req, res) {
       };
 
       let finalResults = [];
+      let radiusUsed = 2.0; // 블록 밖에서 선언 — return 시 참조 가능
 
       // ── 1단계: 네이버 로컬 검색
       if (NAVER_ID && NAVER_SECRET) {
@@ -95,7 +96,6 @@ export default async function handler(req, res) {
           // 거리 필터: 2km → 3.5km → 5km 단계적 확장
           // 절대 우회 없음 — 5km에도 3개 미만이면 있는 것만 반환
           let nearby = [];
-          let radiusUsed = 2.0;
           for (const radius of [2.0, 3.5, 5.0]) {
             nearby = withCoords.filter(item =>
               distKm(midLat, midLng, item._lat, item._lng) <= radius
