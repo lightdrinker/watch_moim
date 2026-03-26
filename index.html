@@ -828,13 +828,13 @@ async function runGemini(restaurants) {
     return `${i+1}. ${r.name} (평점:${r.rating||'없음'}, 리뷰:${r.user_ratings_total||0}개, 주소:${r.formatted_address||''}${blogInfo})`;
   }).join('\n');
   const cstr = S.condition.main || S.condition.selected?.join(', ') || '상관없음';
-  const prompt = `당신은 한국 맛집 큐레이터입니다. 아래 식당 목록에서 "${S.type}" 모임 (조건: ${cstr})에 가장 잘 맞는 TOP 3를 선정하세요. 블로그 후기가 있는 경우 실제 방문객의 경험을 반영하여 판단하세요.
+  const prompt = `당신은 한국 맛집 큐레이터입니다. 아래 식당 목록에서 "${S.type}" 모임 (조건: ${cstr})에 가장 잘 맞는 TOP 3를 선정하세요. 블로그 후기는 판단 참고용으로만 사용하세요.
 
 식당 목록:
 ${list}
 
 반드시 아래 JSON 배열 형식으로만 응답하세요. 다른 텍스트, 마크다운, 코드블록 없이 JSON만:
-[{"rank":1,"name":"식당명","description":"이 모임에 어울리는 이유 2문장으로 구체적으로","tags":["분위기태그","음식태그","특징태그"]},{"rank":2,"name":"식당명","description":"설명","tags":["태그1","태그2","태그3"]},{"rank":3,"name":"식당명","description":"설명","tags":["태그1","태그2","태그3"]}]`;
+[{"rank":1,"name":"식당명","description":"블로그 내용 직접 인용 금지. 이 식당의 음식과 분위기를 자연스럽게 1-2문장으로 요약. 음식 설명 반드시 포함.","tags":["분위기태그","음식태그","특징태그"]},{"rank":2,"name":"식당명","description":"블로그 내용 직접 인용 금지. 이 식당의 음식과 분위기를 자연스럽게 1-2문장으로 요약. 음식 설명 반드시 포함.","tags":["태그1","태그2","태그3"]},{"rank":3,"name":"식당명","description":"블로그 내용 직접 인용 금지. 이 식당의 음식과 분위기를 자연스럽게 1-2문장으로 요약. 음식 설명 반드시 포함.","tags":["태그1","태그2","태그3"]}]`;
 
   try {
     const res = await fetch('/api/places?action=gemini', {

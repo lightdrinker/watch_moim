@@ -107,7 +107,7 @@ export default async function handler(req, res) {
         } catch { /* 네이버 실패 시 Google fallback으로 진행 */ }
       }
 
-      // ── 2단계: Google Nearby Search로 사진/평점 보완 (네이버 좌표 기준 50m)
+      // ── 2단계: Google Text Search로 사진/평점 보완 (식당명+주소로 정확 매칭)
       const fields = 'name,rating,user_ratings_total,formatted_address,photos,price_level,opening_hours,place_id,types';
       const enriched = await Promise.all(finalResults.slice(0, 10).map(async item => {
         const placeName = item.title
@@ -116,29 +116,29 @@ export default async function handler(req, res) {
         const placeAddr = item.roadAddress || item.address || '';
 
         try {
-          // 네이버 좌표 기준 Nearby Search — 50m → 100m → 200m 단계적 확장
-          const cleanName = placeName.replace(/\s/g, '').toLowerCase();
-          let gResult = null;
-          for (const nsRadius of [50, 100, 200]) {
-            const nsUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${item._lat},${item._lng}&radius=${nsRadius}&language=ko&key=${GKEY}`;
-            const nsRes = await fetch(nsUrl);
-            const nsData = await nsRes.json();
-            const candidates = nsData.results || [];
-            gResult = candidates.find(c =>
-              c.name && c.name.replace(/\s/g, '').toLowerCase().includes(cleanName.slice(0, 3))
-            ) || candidates[0] || null;
-            if (gResult) break;
-          }
+          // 식당명 + 도로명주소로 Text Search → 정확한 식당 매칭
+          const q = placeAddr ? `${placeName} ${placeAddr}` : placeName;
+          const tsUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(q)}&language=ko&key=${GKEY}`;
+          const tsRes = await fetch(tsUrl);
+          const tsData = await tsRes.json();
+          const gResult = tsData.results?.[0];
 
           if (gResult?.place_id) {
-            const dr = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?place_id=${gResult.place_id}&fields=${fields}&language=ko&key=${GKEY}`);
-            const dd = await dr.json();
-            const detail = dd.result || gResult;
-            return {
-              ...detail,
-              name: placeName,
-              formatted_address: placeAddr || detail.formatted_address || '',
-            };
+            // 네이버 좌표 기준 5km 이내인지 검증 (엉뚱한 지역 매칭 방지)
+            const gLat = gResult.geometry?.location?.lat;
+            const gLng = gResult.geometry?.location?.lng;
+            const gDist = (gLat && gLng) ? distKm(item._lat, item._lng, gLat, gLng) : 999;
+
+            if (gDist <= 5.0) {
+              const dr = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?place_id=${gResult.place_id}&fields=${fields}&language=ko&key=${GKEY}`);
+              const dd = await dr.json();
+              const detail = dd.result || gResult;
+              return {
+                ...detail,
+                name: placeName,
+                formatted_address: placeAddr || detail.formatted_address || '',
+              };
+            }
           }
         } catch { /* Google 실패 시 네이버 데이터만 사용 */ }
 
