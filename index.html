@@ -822,14 +822,12 @@ function buildKw() {
 }
 
 async function runGemini(restaurants) {
+  // 블로그 snippet 제거 — 식당명/주소/업종만 넘겨서 프롬프트 길이 줄이고 JSON 파싱 안정화
   const list = restaurants.map((r,i) => {
-    // 블로그 snippet 특수문자 정리 (따옴표, 해시태그, 줄바꿈 → Gemini JSON 파싱 오류 방지)
-    const rawSnippets = (r.blog_snippets || []).join(' ').slice(0, 300);
-    const snippets = rawSnippets
-      .replace(/"/g, ' ').replace(/'/g, ' ')
-      .replace(/#[\S]+/g, '').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
-    const blogInfo = snippets ? ` 블로그후기: ${snippets}` : '';
-    return `${i+1}. ${r.name} (평점:${r.rating||'없음'}, 리뷰:${r.user_ratings_total||0}개, 주소:${r.formatted_address||''}${blogInfo})`;
+    const typeLabel = (r.types || [])
+      .filter(t => !['point_of_interest','establishment','premise'].includes(t))
+      .slice(0, 2).join(', ');
+    return `${i+1}. ${r.name} (평점:${r.rating||'없음'}, 리뷰:${r.user_ratings_total||0}개, 주소:${r.formatted_address||''}, 업종:${typeLabel||'식당'})`;
   }).join('\n');
   const cstr = S.condition.main || S.condition.selected?.join(', ') || '상관없음';
   const prompt = `당신은 한국 맛집 큐레이터입니다.

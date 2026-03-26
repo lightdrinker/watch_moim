@@ -122,26 +122,28 @@ export default async function handler(req, res) {
             return [guM?.[1], dongM?.[1]].filter(Boolean).join(' ');
           })();
 
-          // 1차: 식당명 + 구/동, 2차: 주소만 (식당명이 Google DB에 없는 경우 대비)
-          const queries = addrShort
-            ? [`${placeName} ${addrShort}`, addrShort]
-            : [placeName];
+          const q = addrShort ? `${placeName} ${addrShort}` : placeName;
+          const tsUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(q)}&language=ko&key=${GKEY}`;
+          const tsRes = await fetch(tsUrl);
+          const tsData = await tsRes.json();
+          const candidates = (tsData.results || []).slice(0, 3);
 
-          let gResult = null;
-          for (const q of queries) {
-            const tsUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(q)}&language=ko&key=${GKEY}`;
-            const tsRes = await fetch(tsUrl);
-            const tsData = await tsRes.json();
-            const candidate = tsData.results?.[0];
-            if (!candidate?.place_id) continue;
+          // 이름 유사도 검증 함수 (공백/대소문자 무시)
+          const normalize = s => s.replace(/\s/g, '').toLowerCase();
+          const nName = normalize(placeName);
 
-            // 네이버 좌표 기준 5km 이내 검증
-            const gLat = candidate.geometry?.location?.lat;
-            const gLng = candidate.geometry?.location?.lng;
-            const gDist = (gLat && gLng) ? distKm(item._lat, item._lng, gLat, gLng) : 999;
-            if (gDist <= 5.0) { gResult = candidate; break; }
-          }
+          // 상위 3개 중 이름 포함 관계 + 5km 이내인 것만 선택
+          const gResult = candidates.find(c => {
+            if (!c.place_id) return false;
+            const gLat = c.geometry?.location?.lat;
+            const gLng = c.geometry?.location?.lng;
+            if (!gLat || !gLng) return false;
+            if (distKm(item._lat, item._lng, gLat, gLng) > 5.0) return false;
+            const gName = normalize(c.name || '');
+            return gName.includes(nName.slice(0, 3)) || nName.includes(gName.slice(0, 3));
+          }) || null;
 
+          // 이름 매칭 성공한 경우만 Details 조회 (실패 시 photos 없음 — 틀린 사진보다 낫다)
           if (gResult?.place_id) {
             const dr = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?place_id=${gResult.place_id}&fields=${fields}&language=ko&key=${GKEY}`);
             const dd = await dr.json();
